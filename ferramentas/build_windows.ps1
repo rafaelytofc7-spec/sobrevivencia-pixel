@@ -46,6 +46,7 @@ Os saves e os controles ficam em %APPDATA%\SobrevivenciaPixel
 "@
 [System.IO.File]::WriteAllText("$raiz\$pacote\LEIA-ME.txt", $leia, [System.Text.Encoding]::UTF8)
 $zip = "dist_pacote\SobrevivenciaPixel-v$versao-windows.zip"
-Compress-Archive -Path "$pacote\*" -DestinationPath $zip -Force
+# zip com barras "/" (padrão), feito pelo Python
+& $Python -c "import os,sys,zipfile; r=sys.argv[1]; z=zipfile.ZipFile(sys.argv[2],'w',zipfile.ZIP_DEFLATED); [z.write(os.path.join(d,f), os.path.relpath(os.path.join(d,f), r).replace(os.sep,'/')) for d,_,fs in os.walk(r) for f in fs]; z.close()" "$raiz\$pacote" "$raiz\$zip"
 $tam = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 Write-Output "PRONTO: $raiz\$zip ($tam MB)"
