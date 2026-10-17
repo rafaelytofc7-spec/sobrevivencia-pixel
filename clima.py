@@ -11,6 +11,7 @@ O nível muda devagar, então dá para ver os lagos crescendo/encolhendo.
 import random
 
 from config import NIVEL_CHUVA, NIVEL_SECA, VELOCIDADE_NIVEL
+from estacoes import PESOS_CLIMA
 
 ALVO_NIVEL = {"normal": 0.0, "chuva": NIVEL_CHUVA, "seca": NIVEL_SECA}
 NOMES_CLIMA = {"normal": "Tempo bom", "chuva": "Chuva", "seca": "Seca"}
@@ -24,6 +25,7 @@ class Clima:
         self.nivel = 0.0          # deslocamento do nível da água
         self.chuva = 0.0          # 0..1 (intensidade visual da chuva)
         self.secura = 0.0         # 0..1 (intensidade visual da seca)
+        self.estacao = "primavera"  # o jogo atualiza; muda a chance de chuva/seca
 
     def mudar(self, estado, duracao=None):
         self.estado = estado
@@ -35,7 +37,8 @@ class Clima:
         self.tempo_restante -= dt
         if self.tempo_restante <= 0:
             if self.estado == "normal":
-                self.mudar(self.rng.choice(["chuva", "chuva", "seca"]))
+                chuva, seca = PESOS_CLIMA.get(self.estacao, (2.0, 1.0))
+                self.mudar("chuva" if self.rng.random() * (chuva + seca) < chuva else "seca")
             else:
                 self.mudar("normal")
         # o nível da água anda devagar até o alvo
@@ -50,7 +53,13 @@ class Clima:
         self.secura = _aproximar(self.secura, 1.0 if self.estado == "seca" else 0.0, dt * 0.25)
 
     def nome(self):
+        if self.estado == "chuva" and self.estacao == "inverno":
+            return "Neve"
         return NOMES_CLIMA[self.estado]
+
+    @property
+    def nevando(self):
+        return self.estacao == "inverno"
 
     def para_dict(self):
         return {"estado": self.estado, "tempo_restante": self.tempo_restante,

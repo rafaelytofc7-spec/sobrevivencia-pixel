@@ -8,8 +8,11 @@ import random
 import pygame
 
 from config import (VELOCIDADE_JOGADOR, VIDA_MAX, FOME_MAX, SEDE_MAX, TILE,
-                    TAMANHO_INVENTARIO, TAMANHO_BARRA, AGUA_RASA, CHAO_AGUA,
-                    RAIO_IMA_ITENS, TEMPO_SUMIR_ITEM)
+                    TAMANHO_INVENTARIO, TAMANHO_BARRA, AGUA_RASA, AGUA_FUNDA, CHAO_AGUA,
+                    RAIO_IMA_ITENS, TEMPO_SUMIR_ITEM, ACELERACAO, ATRITO, MULT_CORRIDA,
+                    MULT_AGUA_RASA, MULT_NADANDO, ENERGIA_MAX, GASTO_CORRIDA, GASTO_ROLAR,
+                    REGEN_ENERGIA, ESPERA_REGEN_ENERGIA, GASTO_NADO, DURACAO_ROLAR,
+                    VELOCIDADE_ROLAR, AR_MAX, GASTO_AR, REGEN_AR, DANO_AFOGAR, CANTO_DESLIZE)
 from dados import ITENS, CRIATURAS, ORDEM_SLOTS
 
 
@@ -156,39 +159,86 @@ class Inventario:
 # ===============================================================
 # Movimento com colisão
 # ===============================================================
-def mover_com_colisao(ent, dx, dy, mundo):
-    """Move X e Y separados (desliza nas paredes). Se já estiver preso, deixa sair."""
-    preso = mundo.colide(ent.retangulo())
+def mover_com_colisao(ent, dx, dy, mundo, deslizar=False, agua=True):
+    """Move X e Y separados (desliza nas paredes). Se já estiver preso, deixa sair.
+    deslizar=True: ao bater numa quina, empurra de lado para contornar (correção de quina).
+    agua=False: água funda não bloqueia (o jogador nada)."""
+    def bate():
+        return mundo.colide(ent.retangulo(), agua)
+
+    preso = bate()
+    bloqueou_x = bloqueou_y = False
     if dx:
         ent.x += dx
-        if not preso and mundo.colide(ent.retangulo()):
+        if not preso and bate():
             ent.x -= dx
+            bloqueou_x = True
     if dy:
         ent.y += dy
-        if not preso and mundo.colide(ent.retangulo()):
+        if not preso and bate():
             ent.y -= dy
+            bloqueou_y = True
+    if deslizar and not preso:
+        if bloqueou_x and abs(dy) < 1e-6:
+            _contornar_quina(ent, dx, "x", bate)
+        elif bloqueou_y and abs(dx) < 1e-6:
+            _contornar_quina(ent, dy, "y", bate)
+    return bloqueou_x, bloqueou_y
+
+
+def _contornar_quina(ent, passo, eixo, bate):
+    """Procura o menor desvio lateral (até CANTO_DESLIZE px) que deixa passar e anda um pouco para lá."""
+    lado = "y" if eixo == "x" else "x"
+    for k in range(1, CANTO_DESLIZE + 1):
+        for sinal in (-1, 1):
+            setattr(ent, lado, getattr(ent, lado) + sinal * k)
+            setattr(ent, eixo, getattr(ent, eixo) + passo)
+            livre = not bate()
+            setattr(ent, eixo, getattr(ent, eixo) - passo)
+            setattr(ent, lado, getattr(ent, lado) - sinal * k)
+            if livre:
+                desvio = sinal * min(abs(passo), k)
+                setattr(ent, lado, getattr(ent, lado) + desvio)
+                if bate():
+                    setattr(ent, lado, getattr(ent, lado) - desvio)
+                return True
+    return False
 
 
 # ===============================================================
 # Jogador
 # ===============================================================
+DURACAO_GOLPE = 0.24
+
+
 class Jogador:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+        self.vx = 0.0
+        self.vy = 0.0
         self.direcao = "baixo"
         self.andando = False
+        self.correndo = False
         self.tempo_anim = 0.0
         self.vida = VIDA_MAX
         self.fome = FOME_MAX
         self.sede = SEDE_MAX
+        self.energia = ENERGIA_MAX
+        self.ar = AR_MAX
+        self.espera_energia = 0.0
         self.inventario = Inventario()
         self.espera_coleta = 0.0
         self.espera_ataque = 0.0
         self.espera_construir = 0.0
         self.invencivel = 0.0
         self.tempo_golpe = 0.0
-        self.na_agua = False
+        self.rolando = 0.0
+        self.espera_rolar = 0.0
+        self.dir_rolar = (0.0, 1.0)
+        self.na_agua = False          # água rasa ou funda
+        self.nadando = False          # água funda
+        self.ultimo_input = (0.0, 1.0)
 
     def retangulo(self):
         return pygame.Rect(int(self.x - 4), int(self.y - 5), 8, 5)
@@ -197,9 +247,11 @@ class Jogador:
     def centro(self):
         return (self.x, self.y - 6)
 
+    VETORES = {"baixo": (0, 1), "cima": (0, -1), "esquerda": (-1, 0), "direita": (1, 0)}
+
     def ponto_frente(self, distancia=10):
         cx, cy = self.centro
-        dx, dy = {"baixo": (0, 1), "cima": (0, -1), "esquerda": (-1, 0), "direita": (1, 0)}[self.direcao]
+        dx, dy = self.VETORES[self.direcao]
         return (cx + dx * distancia, cy + dy * distancia)
 
     def olhar_para(self, px, py):
@@ -209,41 +261,125 @@ class Jogador:
         elif dy or dx:
             self.direcao = "baixo" if dy > 0 else "cima"
 
-    def atualizar(self, dt, teclas, mundo):
-        dx = dy = 0.0
-        if teclas[pygame.K_a] or teclas[pygame.K_LEFT]:
-            dx -= 1
-        if teclas[pygame.K_d] or teclas[pygame.K_RIGHT]:
-            dx += 1
-        if teclas[pygame.K_w] or teclas[pygame.K_UP]:
-            dy -= 1
-        if teclas[pygame.K_s] or teclas[pygame.K_DOWN]:
-            dy += 1
-        self.andando = bool(dx or dy)
-        self.na_agua = mundo.tipo_chao(int(self.x // TILE), int((self.y - 2) // TILE)) == AGUA_RASA
+    def _direcao_do_vetor(self, dx, dy):
+        if abs(dx) > abs(dy) + 0.01:
+            self.direcao = "direita" if dx > 0 else "esquerda"
+        elif dy:
+            self.direcao = "baixo" if dy > 0 else "cima"
+
+    def pode_usar_ferramentas(self):
+        return not self.nadando and self.rolando <= 0
+
+    def rolar(self):
+        """Rolamento/esquiva: rápido, invencível por um instante, gasta energia."""
+        if self.rolando > 0 or self.espera_rolar > 0 or self.nadando or self.energia < GASTO_ROLAR * 0.5:
+            return False
+        dx, dy = self.ultimo_input if self.andando else self.VETORES[self.direcao]
+        d = math.hypot(dx, dy) or 1.0
+        self.dir_rolar = (dx / d, dy / d)
+        self.rolando = DURACAO_ROLAR
+        self.espera_rolar = DURACAO_ROLAR + 0.25
+        self.energia = max(0.0, self.energia - GASTO_ROLAR)
+        self.espera_energia = ESPERA_REGEN_ENERGIA
+        return True
+
+    def atualizar(self, dt, entrada, mundo):
+        """entrada: dict com mx, my (-1..1), correr (bool), mira (ponto do mundo ou None)."""
+        mx, my = entrada.get("mx", 0.0), entrada.get("my", 0.0)
+        tam = math.hypot(mx, my)
+        if tam > 1:
+            mx, my = mx / tam, my / tam
+            tam = 1.0
+        chao = mundo.tipo_chao(int(self.x // TILE), int((self.y - 2) // TILE))
+        self.nadando = chao == AGUA_FUNDA
+        self.na_agua = chao in CHAO_AGUA
+        self.andando = tam > 0.05
         if self.andando:
-            if dx > 0:
-                self.direcao = "direita"
-            elif dx < 0:
-                self.direcao = "esquerda"
-            elif dy > 0:
-                self.direcao = "baixo"
-            else:
-                self.direcao = "cima"
-            vel = VELOCIDADE_JOGADOR * (0.6 if self.na_agua else 1.0) * dt / math.hypot(dx, dy)
-            mover_com_colisao(self, dx * vel, dy * vel, mundo)
-            self.tempo_anim += dt
+            self.ultimo_input = (mx, my)
+
+        # velocidade desejada
+        mult = MULT_NADANDO if self.nadando else (MULT_AGUA_RASA if self.na_agua else 1.0)
+        self.correndo = bool(entrada.get("correr")) and self.andando and not self.nadando and self.energia > 1
+        if self.correndo:
+            mult *= MULT_CORRIDA
+        if self.rolando > 0:
+            vel = VELOCIDADE_ROLAR * (MULT_AGUA_RASA if self.na_agua else 1.0)
+            self.vx, self.vy = self.dir_rolar[0] * vel, self.dir_rolar[1] * vel
         else:
-            self.tempo_anim = 0.0
-        for nome in ("espera_coleta", "espera_ataque", "invencivel", "tempo_golpe", "espera_construir"):
+            alvo_x, alvo_y = mx * VELOCIDADE_JOGADOR * mult, my * VELOCIDADE_JOGADOR * mult
+            taxa = (ACELERACAO if self.andando else ATRITO) * dt
+            if self.nadando:
+                taxa *= 0.5                      # na água tudo é mais "mole"
+            dvx, dvy = alvo_x - self.vx, alvo_y - self.vy
+            d = math.hypot(dvx, dvy)
+            if d <= taxa:
+                self.vx, self.vy = alvo_x, alvo_y
+            else:
+                self.vx += dvx / d * taxa
+                self.vy += dvy / d * taxa
+
+        if abs(self.vx) + abs(self.vy) > 0.01:
+            bx, by = mover_com_colisao(self, self.vx * dt, self.vy * dt, mundo, deslizar=True, agua=False)
+            if bx:
+                self.vx *= 0.3
+            if by:
+                self.vy *= 0.3
+        rapidez = math.hypot(self.vx, self.vy)
+
+        # para onde olha: andando = direção do movimento; parado = para a mira (mouse)
+        if self.rolando <= 0:
+            if self.andando:
+                self._direcao_do_vetor(mx, my)
+            elif entrada.get("mira") is not None and self.tempo_golpe <= 0:
+                self.olhar_para(*entrada["mira"])
+
+        # energia e ar
+        gastou = False
+        if self.correndo and rapidez > 5:
+            self.energia = max(0.0, self.energia - GASTO_CORRIDA * dt)
+            gastou = True
+        if self.nadando:
+            self.energia = max(0.0, self.energia - GASTO_NADO * dt)
+            gastou = True
+            self.ar = max(0.0, self.ar - GASTO_AR * dt * (1.6 if self.energia <= 0 else 1.0))
+            if self.ar <= 0:
+                self.vida = max(0.0, self.vida - DANO_AFOGAR * dt)
+        else:
+            self.ar = min(AR_MAX, self.ar + REGEN_AR * dt)
+        if gastou:
+            self.espera_energia = ESPERA_REGEN_ENERGIA
+        elif self.espera_energia > 0:
+            self.espera_energia -= dt
+        else:
+            self.energia = min(ENERGIA_MAX, self.energia + REGEN_ENERGIA * dt)
+
+        self.tempo_anim += dt * (1.5 if self.correndo else 1.0)
+        for nome in ("espera_coleta", "espera_ataque", "invencivel", "tempo_golpe", "espera_construir",
+                     "rolando", "espera_rolar"):
             setattr(self, nome, max(0.0, getattr(self, nome) - dt))
+        self.rapidez = rapidez
+
+    # ----- animação -----
+    def animacao(self):
+        """(nome da animação, quadro)."""
+        if self.rolando > 0:
+            q = int((DURACAO_ROLAR - self.rolando) / DURACAO_ROLAR * 4)
+            return "rolar", min(3, q)
+        if self.nadando:
+            return "nadar", int(self.tempo_anim * 3) % 2
+        if self.tempo_golpe > 0:
+            q = int((DURACAO_GOLPE - self.tempo_golpe) / DURACAO_GOLPE * 3)
+            return "atacar", max(0, min(2, q))
+        if getattr(self, "rapidez", 0) > 8:
+            return "andar", int(self.tempo_anim * 9) % 4
+        return "parado", int(self.tempo_anim * 1.5) % 2
 
     def quadro_atual(self):
-        return 0 if not self.andando else 1 + int(self.tempo_anim * 8) % 2
+        return self.animacao()[1]
 
     def levar_dano(self, dano):
-        """Dano reduzido pela armadura. Retorna o dano real (0 se estava invencível)."""
-        if self.invencivel > 0:
+        """Dano reduzido pela armadura. Retorna o dano real (0 se estava invencível/rolando)."""
+        if self.invencivel > 0 or self.rolando > 0:
             return 0
         reducao = min(0.7, self.inventario.defesa() * 0.07)
         real = max(1, round(dano * (1 - reducao)))
@@ -253,7 +389,8 @@ class Jogador:
 
     def para_dict(self):
         return {"x": self.x, "y": self.y, "direcao": self.direcao, "vida": self.vida,
-                "fome": self.fome, "sede": self.sede, "inventario": self.inventario.para_dict()}
+                "fome": self.fome, "sede": self.sede, "energia": self.energia, "ar": self.ar,
+                "inventario": self.inventario.para_dict()}
 
     def carregar_dict(self, d):
         self.x, self.y = d["x"], d["y"]
@@ -261,7 +398,39 @@ class Jogador:
         self.vida = d.get("vida", VIDA_MAX)
         self.fome = d.get("fome", FOME_MAX)
         self.sede = d.get("sede", SEDE_MAX)
+        self.energia = d.get("energia", ENERGIA_MAX)
+        self.ar = d.get("ar", AR_MAX)
         self.inventario.carregar_dict(d.get("inventario", {}))
+
+
+# ===============================================================
+# Flecha (projétil do arco)
+# ===============================================================
+class Flecha:
+    def __init__(self, x, y, dx, dy, dano, velocidade=210.0):
+        d = math.hypot(dx, dy) or 1.0
+        self.x, self.y = x, y
+        self.vx, self.vy = dx / d * velocidade, dy / d * velocidade
+        self.dano = dano
+        self.vida = 0.9
+        self.parada = False
+
+    @property
+    def angulo(self):
+        return math.degrees(math.atan2(-self.vy, self.vx))
+
+    def atualizar(self, dt, mundo):
+        """Anda; retorna True se bateu em algo sólido (ou acabou o alcance)."""
+        self.vida -= dt
+        passos = 3
+        for _ in range(passos):
+            self.x += self.vx * dt / passos
+            self.y += self.vy * dt / passos
+            tx, ty = int(self.x // TILE), int((self.y + 4) // TILE)
+            obj = mundo.objeto(tx, ty)
+            if obj and obj.solido and obj.retangulo_colisao().inflate(0, 8).collidepoint(self.x, self.y + 4):
+                return True
+        return self.vida <= 0
 
 
 # ===============================================================
@@ -415,7 +584,7 @@ class Criatura:
         self.andando = vel > 0 and (dx or dy)
         if self.andando:
             ax, ay = self.x, self.y
-            mover_com_colisao(self, dx * vel * dt, dy * vel * dt, mundo)
+            mover_com_colisao(self, dx * vel * dt, dy * vel * dt, mundo, deslizar=True)
             if abs(self.x - ax) + abs(self.y - ay) < 0.01 and self.estado == "vagar":
                 self.tempo_estado = 0     # bateu em algo: escolhe outro caminho
             if dx > 0.1:
@@ -486,6 +655,8 @@ class Criatura:
     def _pensar_cacador(self, jogo):
         j = jogo.jogador
         alcance = self.info.get("alcance", 120)
+        if self.tipo == "lobo":
+            alcance *= getattr(jogo, "mult_caca_lobo", 1.0)       # inverno: lobos com mais fome
         alvo = None
         dj = math.hypot(j.x - self.x, j.y - self.y)
         if dj < alcance and j.vida > 0:

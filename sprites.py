@@ -11,6 +11,8 @@ import pygame
 from config import (TILE, AGUA_FUNDA, AGUA_RASA, LAMA, AREIA, GRAMA,
                     GRAMA_FLORESTA, GRAMA_PANTANO, NEVE, ROCHA)
 from dados import ITENS
+import personagem
+from texturas import Texturas
 
 CONTORNO = (28, 24, 36, 255)
 
@@ -353,6 +355,99 @@ def sprite_piso():
         retangulo(s, corte, y, 1, 3, (124, 86, 52))
         s.set_at(((corte + 3) % 16, y + 1), (196, 150, 100))
     return s
+
+
+# ---------------------------------------------------------------
+# v0.4: trigo, plantação, tocha, forno, baú e cama
+# ---------------------------------------------------------------
+TRIGO = ((176, 140, 52), (220, 186, 80), (246, 222, 130))
+
+
+def sprite_trigo(semente, estagio=3, balanco=0):
+    """Trigo (estágio 0 = broto ... 3 = maduro dourado). balanco = -1/0/1 (vento)."""
+    rng = random.Random(semente)
+    s = nova_superficie(TILE, TILE + 3)
+    verde = ((54, 120, 50), (80, 156, 64), (120, 190, 90))
+    altura = [3, 6, 10, 12][estagio]
+    for n, x in enumerate((3, 6, 9, 12)):
+        x += rng.randrange(-1, 2)
+        topo = TILE + 2 - altura - rng.randrange(0, 2)
+        for y in range(topo, TILE + 2):
+            dx = balanco if y < topo + altura // 2 else 0
+            cor = verde[1] if estagio < 3 else TRIGO[0]
+            s.set_at((x + dx, y), cor)
+        if estagio >= 2:
+            cor_espiga = verde[2] if estagio == 2 else TRIGO[1]
+            for y in range(topo, topo + 4):
+                s.set_at((x + balanco, y), cor_espiga)
+                if y % 2 == 0:
+                    s.set_at((x + balanco + 1, y), TRIGO[2] if estagio == 3 else verde[2])
+    return contornar(s)
+
+
+def sprite_plantacao(estagio, balanco=0):
+    s = nova_superficie(TILE, TILE + 3)
+    # terra arada
+    retangulo(s, 1, 9, 14, 9, (110, 76, 48))
+    for y in (10, 13, 16):
+        linha(s, (86, 58, 36), (2, y), (13, y))
+    planta = sprite_trigo(7, estagio, balanco)
+    s.blit(planta, (0, -1))
+    return s
+
+
+def sprite_tocha(quadro):
+    s = nova_superficie(TILE, TILE + 2)
+    retangulo(s, 7, 8, 2, 9, (120, 80, 44))
+    retangulo(s, 7, 8, 1, 9, (150, 104, 60))
+    retangulo(s, 6, 7, 4, 2, (70, 60, 56))
+    chamas = [((7, 3), (8, 2), (6, 5), (9, 4)), ((8, 3), (7, 2), (9, 5), (6, 4)), ((7, 2), (8, 3), (6, 4), (9, 5))]
+    for (x, y) in chamas[quadro % 3]:
+        retangulo(s, x, y, 1, 7 - y, (240, 120, 40))
+    retangulo(s, 7, 4, 2, 3, (255, 210, 90))
+    s.set_at((7 + quadro % 2, 5), (255, 250, 210))
+    return contornar(s)
+
+
+def sprite_forno(quadro=0):
+    s = nova_superficie(TILE, TILE + 6)
+    pedra = ((100, 98, 110), (138, 136, 148), (172, 170, 182))
+    bolha(s, 8, 12, 7.5, 9, pedra)
+    for (x, y) in ((4, 6), (10, 8), (6, 14), (12, 15), (3, 11)):
+        linha(s, pedra[0], (x, y), (x + 2, y))
+    # boca do forno com fogo
+    retangulo(s, 5, 13, 6, 5, (40, 24, 20))
+    fogo = (240, 120, 40) if quadro == 0 else (250, 160, 60)
+    retangulo(s, 6, 15, 4, 3, fogo)
+    retangulo(s, 7, 16, 2, 2, (255, 220, 120))
+    retangulo(s, 6, 0, 4, 3, (90, 88, 100))       # chaminé
+    return contornar(s)
+
+
+def sprite_bau():
+    s = nova_superficie(TILE, TILE)
+    madeira = ((120, 74, 40), (160, 106, 58), (196, 142, 84))
+    retangulo(s, 1, 4, 14, 11, madeira[1])
+    retangulo(s, 1, 4, 14, 4, madeira[2])
+    retangulo(s, 1, 8, 14, 1, madeira[0])
+    for x in (1, 14):
+        retangulo(s, x, 4, 1, 11, (90, 90, 100))
+    retangulo(s, 1, 11, 14, 1, madeira[0])
+    retangulo(s, 7, 7, 2, 3, (232, 200, 90))       # fechadura
+    s.set_at((7, 9), (90, 70, 30))
+    return contornar(s)
+
+
+def sprite_cama():
+    s = nova_superficie(TILE, TILE)
+    retangulo(s, 1, 2, 14, 13, (130, 84, 46))
+    retangulo(s, 2, 3, 12, 11, (230, 226, 216))
+    retangulo(s, 3, 3, 10, 3, (250, 250, 246))       # travesseiro
+    retangulo(s, 2, 7, 12, 7, (190, 60, 60))         # cobertor
+    retangulo(s, 2, 7, 12, 1, (226, 100, 96))
+    for x in range(3, 14, 3):
+        s.set_at((x, 10), (160, 44, 48))
+    return contornar(s)
 
 
 # ===============================================================
@@ -723,6 +818,155 @@ def icone_piso():
     return s
 
 
+def icone_lanca():
+    s = nova_superficie(TILE, TILE)
+    for i in range(11):
+        s.set_at((2 + i, 13 - i), CABO)
+    pygame.draw.polygon(s, (150, 152, 166), [(11, 1), (14, 1), (14, 4), (12, 5), (10, 3)])
+    s.set_at((13, 2), (210, 212, 224))
+    pixels(s, [(9, 5), (10, 6)], (200, 180, 120))
+    return contornar(s)
+
+
+def icone_arco():
+    s = nova_superficie(TILE, TILE)
+    pontos = [(3, 13), (3, 10), (4, 7), (6, 5), (9, 4), (12, 3), (13, 3)]
+    for a, b in zip(pontos, pontos[1:]):
+        linha(s, CABO, a, b)
+    linha(s, CABO_ESC, (4, 12), (5, 8))
+    linha(s, (230, 226, 210), (3, 13), (13, 3))
+    retangulo(s, 6, 8, 2, 2, (180, 130, 80))
+    return contornar(s)
+
+
+def icone_flecha():
+    s = nova_superficie(TILE, TILE)
+    linha(s, (176, 130, 80), (3, 12), (12, 3))
+    pixels(s, [(12, 2), (13, 2), (13, 3), (11, 3), (12, 4)], (190, 192, 204))
+    pixels(s, [(2, 11), (3, 13), (2, 12), (4, 13)], (230, 230, 236))
+    return contornar(s)
+
+
+def icone_carvao():
+    s = nova_superficie(TILE, TILE)
+    bolha(s, 6, 9, 3.8, 3.2, ((24, 22, 26), (46, 44, 50), (84, 82, 90)))
+    bolha(s, 10.5, 10, 3.2, 2.8, ((24, 22, 26), (46, 44, 50), (84, 82, 90)))
+    pixels(s, [(5, 7), (10, 8)], (120, 118, 128))
+    return contornar(s)
+
+
+def icone_trigo():
+    s = nova_superficie(TILE, TILE)
+    for n, x in enumerate((6, 8, 10)):
+        linha(s, TRIGO[0], (x, 14), (x - 1 + n, 6))
+        for y in range(2, 7):
+            s.set_at((x - 1 + n, y), TRIGO[1])
+            if y % 2 == 0:
+                s.set_at((x + n, y), TRIGO[2])
+    retangulo(s, 5, 10, 7, 1, (150, 100, 50))
+    return contornar(s)
+
+
+def icone_sementes():
+    s = nova_superficie(TILE, TILE)
+    bolha(s, 8, 10, 5.5, 4, ((150, 110, 70), (190, 150, 100), (220, 190, 140)))   # saquinho
+    retangulo(s, 6, 4, 4, 3, (170, 130, 84))
+    for (x, y) in ((6, 9), (9, 10), (8, 12), (10, 8)):
+        s.set_at((x, y), (240, 214, 120))
+    return contornar(s)
+
+
+def icone_pao():
+    s = nova_superficie(TILE, TILE)
+    bolha(s, 8, 9, 6.5, 4.2, ((150, 90, 40), (200, 138, 70), (236, 186, 110)))
+    for x in (5, 8, 11):
+        linha(s, (236, 206, 150), (x, 7), (x + 1, 9))
+    return contornar(s)
+
+
+def icone_sopa():
+    s = nova_superficie(TILE, TILE)
+    bolha(s, 8, 10, 6.5, 4.5, ((110, 70, 40), (150, 100, 58), (186, 136, 84)))   # tigela
+    retangulo(s, 2, 6, 13, 3, (0, 0, 0, 0))
+    bolha(s, 8, 8.5, 6, 2, ((170, 90, 50), (210, 130, 70), (240, 180, 110)))
+    pixels(s, [(6, 8), (10, 9)], (110, 170, 70))
+    pixels(s, [(6, 3), (7, 2), (9, 4), (10, 3)], (230, 230, 240))                 # vapor
+    return contornar(s)
+
+
+def icone_tocha():
+    s = nova_superficie(TILE, TILE)
+    t = sprite_tocha(0)
+    s.blit(t, (0, -2))
+    return s
+
+
+def icone_reduzido(sprite):
+    s = nova_superficie(TILE, TILE)
+    w, h = sprite.get_size()
+    f = min(15 / w, 15 / h)
+    img = pygame.transform.scale(sprite, (max(1, int(w * f)), max(1, int(h * f))))
+    s.blit(img, ((TILE - img.get_width()) // 2, (TILE - img.get_height()) // 2))
+    return s
+
+
+# ---------------------------------------------------------------
+# Ícones pequenos (8x8) do HUD
+# ---------------------------------------------------------------
+def _icone8(desenho, cores):
+    s = nova_superficie(8, 8)
+    for y, linha_ in enumerate(desenho):
+        for x, c in enumerate(linha_):
+            if c != ".":
+                s.set_at((x, y), cores[c])
+    return s
+
+
+def icones_hud():
+    k = CONTORNO
+    return {
+        "vida": _icone8(["........", ".RR.RR..", "RWRRRRR.", "RRRRRRR.", ".RRRRR..", "..RRR...", "...R....", "........"],
+                        {"R": (220, 50, 60), "W": (255, 190, 190)}),
+        "fome": _icone8(["...BB...", "..BMMB..", ".BMMMMB.", ".BMMMMB.", "..BMMB..", "...WW...", "..W..W..", "........"],
+                        {"B": (140, 70, 36), "M": (200, 120, 60), "W": (240, 236, 220)}),
+        "sede": _icone8(["...B....", "...B....", "..BBB...", ".BBWBB..", ".BBBBB..", ".BBBBB..", "..BBB...", "........"],
+                        {"B": (70, 150, 236), "W": (200, 230, 255)}),
+        "energia": _icone8(["....YY..", "...YY...", "..YY....", ".YYYYY..", "...YY...", "..YY....", ".YY.....", "........"],
+                           {"Y": (240, 220, 80)}),
+        "ar": _icone8(["........", "..BBB...", ".B.WWB..", ".B.W.B..", ".B...B..", "..BBB...", "......B.", ".....B.B"],
+                      {"B": (150, 220, 250), "W": (255, 255, 255)}),
+        "dano": _icone8([".......W", "......WG", ".....WG.", "....WG..", ".B.WG...", "..BG....", ".BBB....", "B..B...."],
+                        {"W": (230, 232, 240), "G": (160, 164, 180), "B": (150, 100, 50)}),
+        "defesa": _icone8([".GGGGGG.", "GWWGGGGG", "GWGGGGDG", "GGGGGGDG", ".GGGGDG.", ".GGGGDG.", "..GGDG..", "...GG..."],
+                          {"G": (160, 170, 190), "W": (230, 236, 246), "D": (110, 116, 136)}),
+        "temp": _icone8(["...W....", "..WRW...", "..WRW...", "..WRW...", "..WRW...", ".WRRRW..", ".WRRRW..", "..WWW..."],
+                        {"W": (236, 236, 240), "R": (230, 70, 60)}),
+        "sol": _icone8(["...Y....", ".Y...Y..", "...YY...", "Y.YOOY.Y", "..YOOY..", "...YY...", ".Y...Y..", "...Y...."],
+                       {"Y": (250, 220, 80), "O": (250, 170, 50)}),
+        "lua": _icone8(["..WWW...", ".WW.....", "WW......", "WW......", "WW......", ".WW...W.", "..WWWW..", "........"],
+                       {"W": (220, 226, 250)}),
+        "chuva": _icone8(["..GGG...", ".GGGGG..", "GGGGGGG.", "........", ".B..B...", "B..B..B.", "..B..B..", "........"],
+                         {"G": (170, 176, 196), "B": (100, 160, 240)}),
+        "neve": _icone8(["...W....", ".W.W.W..", "..WWW...", "WWWBWWW.", "..WWW...", ".W.W.W..", "...W....", "........"],
+                        {"W": (240, 246, 255), "B": (160, 200, 250)}),
+        "seca": _icone8(["...O....", ".O.O.O..", "..OOO...", "OOORROOO", "..OOO...", ".O.O.O..", "...O....", "........"],
+                        {"O": (250, 140, 50), "R": (230, 70, 40)}),
+        "primavera": _icone8(["..P.P...", ".PPYPP..", "..PPP...", "...G....", ".GGG....", "...G.G..", "...GG...", "........"],
+                             {"P": (250, 150, 190), "Y": (250, 230, 100), "G": (90, 170, 70)}),
+        "verao": _icone8(["...Y....", ".Y...Y..", "...YY...", "Y.YYYY.Y", "..YYYY..", "...YY...", ".Y...Y..", "...Y...."],
+                         {"Y": (250, 200, 60)}),
+        "outono": _icone8(["....OO..", "...OOOO.", "..OROOO.", ".OORRO..", ".OOOO...", "..OO....", ".B......", "B......."],
+                          {"O": (230, 130, 40), "R": (190, 70, 30), "B": (120, 80, 40)}),
+        "inverno": _icone8(["...W....", ".W.W.W..", "..WWW...", "WWWBWWW.", "..WWW...", ".W.W.W..", "...W....", "........"],
+                           {"W": (230, 240, 255), "B": (140, 190, 250)}),
+        "nublado": _icone8(["........", "..GGG...", ".GWWGG..", "GWWGGGG.", "GGGGGGG.", ".GGGGG..", "........", "........"],
+                           {"G": (180, 186, 204), "W": (230, 234, 244)}),
+        "cama": _icone8(["........", "W.......", "WPP.....", "WRRRRRR.", "WRRRRRR.", "WWWWWWW.", "W.....W.", "........"],
+                        {"W": (140, 96, 56), "P": (250, 250, 246), "R": (200, 60, 60)}),
+        "_k": _icone8(["k"], {"k": k}),
+    }
+
+
 MANCHAS_FERRO = ((214, 140, 90), (180, 100, 70))
 
 
@@ -741,6 +985,10 @@ def criar_icones():
         "parede_madeira": icone_de_parede(sprite_parede_madeira()),
         "parede_pedra": icone_de_parede(sprite_parede_pedra()),
         "piso": icone_piso(),
+        "lanca": icone_lanca(), "arco": icone_arco(), "flecha": icone_flecha(),
+        "carvao": icone_carvao(), "trigo": icone_trigo(), "sementes_trigo": icone_sementes(),
+        "pao": icone_pao(), "sopa": icone_sopa(), "tocha": icone_tocha(),
+        "forno": icone_reduzido(sprite_forno()), "bau": sprite_bau(), "cama": sprite_cama(),
     }
     for tier, cor in COR_TIER.items():
         ic[f"machado_{tier}"] = icone_machado(cor)
@@ -835,6 +1083,92 @@ def gradiente_luz(raio, cor=(255, 200, 140)):
 
 
 # ===============================================================
+# Estações e vento
+# ===============================================================
+OUTONO = [(140, 56, 30), (196, 92, 38), (232, 148, 54), (250, 204, 90)]
+NEVE_TOPO = (244, 248, 255, 255)
+NEVE_SOMBRA = (204, 216, 236, 255)
+FOLHOSAS = ("arvore", "arbusto", "capim", "junco", "arvore_pantano")
+
+
+def _folha(c):
+    return c.a > 0 and c.g > c.r + 12 and c.g > c.b + 4
+
+
+def tingir_estacao(sprite, tipo, estacao, semente=0):
+    """Versão do sprite para a estação (folhas laranjas, neve em cima, flores...)."""
+    if estacao == "verao" or tipo in ("cacto", "pedra", "minerio_ferro"):
+        return sprite
+    s = sprite.copy()
+    larg, alt = s.get_size()
+    rng = random.Random(semente * 17 + len(tipo))
+    for y in range(alt):
+        for x in range(larg):
+            c = s.get_at((x, y))
+            if not _folha(c):
+                continue
+            lum = (c.r + c.g + c.b) / 3
+            if estacao == "outono" and tipo in FOLHOSAS:
+                i = 0 if lum < 70 else 1 if lum < 100 else 2 if lum < 130 else 3
+                if tipo in ("capim", "junco"):
+                    i = min(3, i + 1)
+                s.set_at((x, y), OUTONO[i])
+            elif estacao == "inverno":
+                acima = s.get_at((x, y - 1)) if y > 0 else pygame.Color(0, 0, 0, 0)
+                topo = acima.a == 0 or tuple(acima)[:3] == CONTORNO[:3]
+                if topo or (y > 0 and not _folha(acima) and rng.random() < 0.5):
+                    s.set_at((x, y), NEVE_TOPO)
+                elif tipo in ("capim", "junco"):
+                    s.set_at((x, y), (150, 136, 100))
+                else:
+                    g = int(lum * 0.85)
+                    s.set_at((x, y), (g - 10, g + 6, g + 4) if g > 10 else c)
+            elif estacao == "primavera" and tipo in ("arvore", "arbusto") and rng.random() < 0.07:
+                s.set_at((x, y), rng.choice([(250, 180, 210), (255, 240, 246), (250, 150, 190)]))
+    # inverno: um pouco de neve em cima das pedras
+    return s
+
+
+def tingir_pedra_inverno(sprite):
+    s = sprite.copy()
+    larg, alt = s.get_size()
+    for x in range(larg):
+        for y in range(alt):
+            c = s.get_at((x, y))
+            if c.a > 0 and tuple(c)[:3] != CONTORNO[:3]:
+                s.set_at((x, y), NEVE_TOPO)
+                if y + 1 < alt and s.get_at((x, y + 1)).a > 0:
+                    s.set_at((x, y + 1), NEVE_SOMBRA)
+                break
+    return s
+
+
+def balancar(sprite, d, proporcao=0.5):
+    """Inclina a parte de cima do sprite d pixels (vento)."""
+    if d == 0:
+        return sprite
+    larg, alt = sprite.get_size()
+    s = nova_superficie(larg, alt)
+    limite = int(alt * proporcao)
+    s.blit(sprite, (0, limite), (0, limite, larg, alt - limite))
+    s.blit(sprite, (d, 0), (0, 0, larg, limite))
+    return s
+
+
+TAMANHO_SOMBRA = {"arvore": 14, "arvore_pantano": 14, "pinheiro": 12, "cacto": 9, "pedra": 13,
+                  "minerio_ferro": 13, "arbusto": 12, "capim": 8, "junco": 8, "trigo": 10, "plantacao": 0,
+                  "bancada": 14, "fogueira": 12, "parede_madeira": 0, "parede_pedra": 0, "piso": 0,
+                  "tocha": 6, "forno": 14, "bau": 14, "cama": 14}
+
+
+def criar_sombra(largura):
+    s = nova_superficie(largura, max(3, largura // 3))
+    pygame.draw.ellipse(s, (0, 0, 0, 72), s.get_rect())
+    return s
+
+
+
+# ===============================================================
 # Guarda de todos os sprites
 # ===============================================================
 class Sprites:
@@ -864,7 +1198,23 @@ class Sprites:
             "parede_madeira": [sprite_parede_madeira()],
             "parede_pedra": [sprite_parede_pedra()],
             "piso": [sprite_piso()],
+            "trigo": [sprite_trigo(i) for i in range(3)],
+            "bau": [sprite_bau()],
+            "cama": [sprite_cama()],
+            "forno": [sprite_forno(0)],
+            "tocha": [sprite_tocha(0)],
+            "plantacao": [sprite_plantacao(0)],
         }
+        self.plantacao = [sprite_plantacao(e) for e in range(4)]
+        self.tocha = [sprite_tocha(q) for q in range(3)]
+        self.forno = [sprite_forno(q) for q in range(2)]
+        self.texturas = Texturas()
+        self.hud = {k: pygame.transform.scale(v, (24, 24)) for k, v in icones_hud().items()}
+        self.hud_peq = {k: pygame.transform.scale(v, (16, 16)) for k, v in icones_hud().items()}
+        self.sombras = {k: criar_sombra(v) for k, v in TAMANHO_SOMBRA.items() if v}
+        self._estacao = {}
+        self._balanco = {}
+        self._jogador = {}
         self.arbusto_com = sprite_arbusto(True)
         self.arbusto_sem = sprite_arbusto(False)
         self.fogueira = [sprite_fogueira(q) for q in range(3)]
@@ -883,7 +1233,6 @@ class Sprites:
                 "branco": branco,
             }
 
-        self.jogador = sprites_jogador()
         self.icones = criar_icones()
         self.itens_chao = {nome: pygame.transform.scale(img, (10, 10)) for nome, img in self.icones.items()}
         self.itens_chao["madeira"] = item_chao_madeira()
@@ -897,13 +1246,46 @@ class Sprites:
         self._rachados = {}
         self._fantasmas = {}
 
-    def sprite_objeto(self, obj):
+    def sprite_objeto(self, obj, estacao="verao", balanco=0):
         if obj.tipo == "arbusto":
-            return self.arbusto_com if obj.tem_frutas else self.arbusto_sem
-        if obj.tipo == "fogueira":
+            base = self.arbusto_com if obj.tem_frutas else self.arbusto_sem
+            chave = ("arbusto", obj.tem_frutas)
+        elif obj.tipo == "fogueira":
             return self.fogueira[0] if obj.acesa else self.fogueira_apagada
-        lista = self.objetos[obj.tipo]
-        return lista[obj.variante % len(lista)]
+        elif obj.tipo == "plantacao":
+            base = self.plantacao[min(3, obj.estagio)]
+            chave = ("plantacao", obj.estagio)
+        else:
+            lista = self.objetos[obj.tipo]
+            base = lista[obj.variante % len(lista)]
+            chave = (obj.tipo, obj.variante % len(lista))
+        img = self.da_estacao(chave, base, obj.tipo, estacao)
+        if balanco:
+            k = (chave, estacao, balanco)
+            if k not in self._balanco:
+                prop = 0.45 if obj.tipo in ("arvore", "arvore_pantano", "pinheiro") else 0.6
+                self._balanco[k] = balancar(img, balanco, prop)
+            img = self._balanco[k]
+        return img
+
+    def da_estacao(self, chave, base, tipo, estacao):
+        if estacao == "verao" or tipo not in ("arvore", "arvore_pantano", "pinheiro", "arbusto", "capim",
+                                              "junco", "pedra", "minerio_ferro"):
+            return base
+        k = (chave, estacao)
+        if k not in self._estacao:
+            if tipo in ("pedra", "minerio_ferro"):
+                self._estacao[k] = tingir_pedra_inverno(base) if estacao == "inverno" else base
+            else:
+                self._estacao[k] = tingir_estacao(base, tipo, estacao, hash(chave) & 0xff)
+        return self._estacao[k]
+
+    def jogador(self, direcao, anim, quadro, cabeca=None, corpo=None, mao=None):
+        k = (direcao, anim, quadro, cabeca, corpo, mao)
+        if k not in self._jogador:
+            icone = self.icones.get(mao) if mao else None
+            self._jogador[k] = personagem.montar(direcao, anim, quadro, cabeca, corpo, icone)
+        return self._jogador[k]
 
     def rachado(self, chave, sprite, estagio):
         if estagio <= 0:
@@ -916,6 +1298,8 @@ class Sprites:
     def sprite_construcao(self, item):
         if item == "fogueira":
             return self.fogueira[0]
+        if item == "sementes_trigo":
+            return self.plantacao[0]
         return self.objetos[item][0]
 
     def fantasma(self, item, valido):

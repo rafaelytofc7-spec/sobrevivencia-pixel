@@ -11,7 +11,8 @@ import os
 
 from config import ARQUIVO_SAVE
 
-VERSAO_SAVE = 3   # v0.3: mundo infinito em chunks
+VERSAO_SAVE = 4   # v0.4: estações, baús, cama, minimapa (lê saves da v0.3)
+VERSOES_ACEITAS = (3, 4)
 
 
 def salvar_jogo(jogo, caminho=ARQUIVO_SAVE):
@@ -25,6 +26,8 @@ def salvar_jogo(jogo, caminho=ARQUIVO_SAVE):
         "jogador": jogo.jogador.para_dict(),
         "chunks": jogo.mundo.dados_save(),
     }
+    if hasattr(jogo, "dados_extras"):
+        dados.update(jogo.dados_extras())
     temporario = caminho + ".tmp"
     with open(temporario, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, separators=(",", ":"))
@@ -40,7 +43,7 @@ def carregar_jogo(caminho=ARQUIVO_SAVE):
             dados = json.load(f)
     except (OSError, ValueError):
         return None, "O arquivo de save está estragado"
-    if dados.get("versao") != VERSAO_SAVE:
+    if dados.get("versao") not in VERSOES_ACEITAS:
         return None, "Save de versão antiga (o mundo mudou na v0.3)"
     return dados, ""
 

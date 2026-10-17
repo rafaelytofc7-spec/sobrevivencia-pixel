@@ -24,7 +24,17 @@ ITENS = {
     "couro":         {"nome": "Couro", "tipo": "material", "pilha": 99},
     "minerio_ferro": {"nome": "Minério de ferro", "tipo": "material", "pilha": 99,
                       "desc": "Achado nas montanhas. Derreta na fogueira"},
-    "ferro":         {"nome": "Barra de ferro", "tipo": "material", "pilha": 99},
+    "ferro":         {"nome": "Barra de ferro", "tipo": "material", "pilha": 99,
+                      "desc": "Feita no forno (minério + carvão)"},
+    "carvao":        {"nome": "Carvão", "tipo": "material", "pilha": 99,
+                      "desc": "Madeira queimada no forno"},
+    "trigo":         {"nome": "Trigo", "tipo": "material", "pilha": 99,
+                      "desc": "Faça pão no forno"},
+    "sementes_trigo": {"nome": "Sementes de trigo", "tipo": "construcao", "pilha": 99,
+                       "objeto": "plantacao",
+                       "desc": "Plante na grama (botão direito). Cresce mais rápido na primavera"},
+    "flecha":        {"nome": "Flecha", "tipo": "municao", "pilha": 99,
+                      "desc": "Munição do arco"},
     # --- comida e bebida ---
     "frutas":        {"nome": "Frutas", "tipo": "comida", "pilha": 99, "fome": 15},
     "carne_crua":    {"nome": "Carne crua", "tipo": "comida", "pilha": 99, "fome": 10, "vida": -5,
@@ -33,6 +43,9 @@ ITENS = {
     "peixe":         {"nome": "Peixe cru", "tipo": "comida", "pilha": 99, "fome": 8,
                       "desc": "Asse na fogueira (E perto dela)"},
     "peixe_assado":  {"nome": "Peixe assado", "tipo": "comida", "pilha": 99, "fome": 30, "vida": 4},
+    "pao":           {"nome": "Pão", "tipo": "comida", "pilha": 99, "fome": 30, "vida": 3},
+    "sopa":          {"nome": "Sopa", "tipo": "comida", "pilha": 10, "fome": 40, "sede": 15, "vida": 8,
+                      "desc": "Esquenta no frio"},
     "cantil":        {"nome": "Cantil (vazio)", "tipo": "utilidade", "pilha": 1,
                       "desc": "Encha com E perto da água"},
     "cantil_cheio":  {"nome": "Cantil cheio", "tipo": "bebida", "pilha": 1, "sede": 45,
@@ -58,6 +71,10 @@ ITENS = {
     "espada_madeira": {"nome": "Espada de madeira", "tipo": "arma", "pilha": 1, "slot": "arma", "dano": 2},
     "espada_pedra":   {"nome": "Espada de pedra", "tipo": "arma", "pilha": 1, "slot": "arma", "dano": 4},
     "espada_ferro":   {"nome": "Espada de ferro", "tipo": "arma", "pilha": 1, "slot": "arma", "dano": 7},
+    "lanca":          {"nome": "Lança", "tipo": "arma", "pilha": 1, "slot": "arma", "dano": 5, "alcance": 20,
+                       "desc": "Alcança mais longe que a espada"},
+    "arco":           {"nome": "Arco", "tipo": "arma", "pilha": 1, "slot": "arma", "dano": 1, "disparo": 5,
+                       "desc": "Na mão: clique para atirar flechas na direção do mouse"},
     # --- armaduras ---
     "capuz_couro":     {"nome": "Capuz de couro", "tipo": "armadura", "pilha": 1, "slot": "cabeca", "defesa": 1},
     "roupa_couro":     {"nome": "Roupa de couro", "tipo": "armadura", "pilha": 1, "slot": "corpo", "defesa": 2},
@@ -71,6 +88,14 @@ ITENS = {
     "parede_madeira": {"nome": "Parede de madeira", "tipo": "construcao", "pilha": 99},
     "parede_pedra":   {"nome": "Parede de pedra", "tipo": "construcao", "pilha": 99},
     "piso":           {"nome": "Piso", "tipo": "construcao", "pilha": 99},
+    "tocha":          {"nome": "Tocha", "tipo": "construcao", "pilha": 99,
+                       "desc": "Ilumina. Na mão também ilumina em volta de você"},
+    "forno":          {"nome": "Forno", "tipo": "construcao", "pilha": 10,
+                       "desc": "Faz carvão, barras de ferro e pão"},
+    "bau":            {"nome": "Baú", "tipo": "construcao", "pilha": 10,
+                       "desc": "Guarda 18 pilhas de itens (E ou botão direito para abrir)"},
+    "cama":           {"nome": "Cama", "tipo": "construcao", "pilha": 10,
+                       "desc": "Marca onde você renasce. À noite: dormir pula para a manhã"},
 }
 
 NOMES_SLOTS = {"cabeca": "Cabeça", "corpo": "Corpo", "arma": "Arma", "ferramenta": "Ferramenta"}
@@ -85,7 +110,7 @@ def nome_item(item):
 # RECEITAS (menu C)
 # estacao: None = em qualquer lugar, "bancada" ou "fogueira" = precisa estar perto
 # ===============================================================
-CATEGORIAS = ["Ferramentas", "Armas", "Armaduras", "Construção", "Comida", "Materiais"]
+CATEGORIAS = ["Ferramentas", "Armas", "Armaduras", "Construção", "Móveis", "Comida", "Materiais"]
 
 RECEITAS = [
     # Ferramentas
@@ -101,25 +126,37 @@ RECEITAS = [
     {"item": "espada_madeira", "custo": {"madeira": 4}, "categoria": "Armas"},
     {"item": "espada_pedra", "custo": {"madeira": 1, "pedra": 4}, "categoria": "Armas", "estacao": "bancada"},
     {"item": "espada_ferro", "custo": {"madeira": 1, "ferro": 4}, "categoria": "Armas", "estacao": "bancada"},
+    {"item": "lanca", "custo": {"madeira": 3, "pedra": 2, "fibra": 1}, "categoria": "Armas", "estacao": "bancada"},
+    {"item": "arco", "custo": {"madeira": 3, "fibra": 3}, "categoria": "Armas", "estacao": "bancada"},
+    {"item": "flecha", "custo": {"madeira": 1, "pedra": 1, "fibra": 1}, "qtd": 4, "categoria": "Armas",
+     "estacao": "bancada"},
     # Armaduras
     {"item": "capuz_couro", "custo": {"couro": 3, "fibra": 1}, "categoria": "Armaduras", "estacao": "bancada"},
     {"item": "roupa_couro", "custo": {"couro": 5, "fibra": 2}, "categoria": "Armaduras", "estacao": "bancada"},
     {"item": "capacete_ferro", "custo": {"ferro": 4}, "categoria": "Armaduras", "estacao": "bancada"},
     {"item": "armadura_ferro", "custo": {"ferro": 7}, "categoria": "Armaduras", "estacao": "bancada"},
     # Construção
-    {"item": "bancada", "custo": {"madeira": 6, "pedra": 2}, "categoria": "Construção"},
     {"item": "fogueira", "custo": {"madeira": 4, "pedra": 3}, "categoria": "Construção"},
     {"item": "parede_madeira", "custo": {"madeira": 2}, "categoria": "Construção"},
     {"item": "parede_pedra", "custo": {"pedra": 2}, "categoria": "Construção"},
     {"item": "piso", "custo": {"madeira": 1}, "categoria": "Construção"},
+    {"item": "tocha", "custo": {"madeira": 1, "fibra": 1}, "qtd": 2, "categoria": "Construção"},
+    # Móveis
+    {"item": "bancada", "custo": {"madeira": 6, "pedra": 2}, "categoria": "Móveis"},
+    {"item": "forno", "custo": {"pedra": 8, "madeira": 2}, "categoria": "Móveis", "estacao": "bancada"},
+    {"item": "bau", "custo": {"madeira": 8}, "categoria": "Móveis", "estacao": "bancada"},
+    {"item": "cama", "custo": {"madeira": 6, "couro": 2, "fibra": 4}, "categoria": "Móveis", "estacao": "bancada"},
     # Comida
     {"item": "carne_assada", "custo": {"carne_crua": 1}, "categoria": "Comida", "estacao": "fogueira"},
     {"item": "peixe_assado", "custo": {"peixe": 1}, "categoria": "Comida", "estacao": "fogueira"},
+    {"item": "sopa", "custo": {"carne_crua": 1, "frutas": 2}, "categoria": "Comida", "estacao": "fogueira"},
+    {"item": "pao", "custo": {"trigo": 3}, "categoria": "Comida", "estacao": "forno"},
     # Materiais
-    {"item": "ferro", "custo": {"minerio_ferro": 2, "madeira": 1}, "categoria": "Materiais", "estacao": "fogueira"},
+    {"item": "carvao", "custo": {"madeira": 2}, "categoria": "Materiais", "estacao": "forno"},
+    {"item": "ferro", "custo": {"minerio_ferro": 2, "carvao": 1}, "categoria": "Materiais", "estacao": "forno"},
 ]
 
-NOMES_ESTACOES = {"bancada": "Bancada", "fogueira": "Fogueira acesa"}
+NOMES_ESTACOES = {"bancada": "Bancada", "fogueira": "Fogueira acesa", "forno": "Forno"}
 
 
 # ===============================================================
@@ -138,6 +175,9 @@ OBJETOS = {
     "arbusto":        {"vida": 2, "drops": [("frutas", 2)], "drops_vazio": [("madeira", 1), ("fibra", 1)], "solido": True},
     "capim":          {"vida": 1, "drops": [("fibra", 1)], "solido": False},
     "junco":          {"vida": 1, "drops": [("fibra", 2)], "solido": False, "altura": 4},
+    "trigo":          {"vida": 1, "drops": [("trigo", 1), ("sementes_trigo", 1)], "solido": False, "altura": 3},
+    "plantacao":      {"vida": 1, "drops": [("sementes_trigo", 1)], "drops_maduro": [("trigo", 2), ("sementes_trigo", 2)],
+                       "solido": False, "altura": 3, "construcao": True},
     # construções
     "bancada":        {"vida": 4, "ferramenta": "machado", "drops": [("bancada", 1)], "solido": True, "construcao": True},
     "fogueira":       {"vida": 2, "drops": [("fogueira", 1)], "solido": False, "construcao": True},
@@ -147,6 +187,11 @@ OBJETOS = {
                        "construcao": True, "altura": 4},
     "piso":           {"vida": 2, "ferramenta": "machado", "drops": [("madeira", 1)], "solido": False,
                        "construcao": True},
+    "tocha":          {"vida": 1, "drops": [("tocha", 1)], "solido": False, "construcao": True, "altura": 2},
+    "forno":          {"vida": 6, "ferramenta": "picareta", "drops": [("forno", 1)], "solido": True,
+                       "construcao": True, "altura": 6},
+    "bau":            {"vida": 4, "ferramenta": "machado", "drops": [("bau", 1)], "solido": True, "construcao": True},
+    "cama":           {"vida": 4, "ferramenta": "machado", "drops": [("cama", 1)], "solido": True, "construcao": True},
 }
 
 NOMES_OBJETOS = {
@@ -154,7 +199,8 @@ NOMES_OBJETOS = {
     "cacto": "Cacto", "pedra": "Pedra", "minerio_ferro": "Minério de ferro",
     "arbusto": "Arbusto", "capim": "Capim", "junco": "Junco", "bancada": "Bancada",
     "fogueira": "Fogueira", "parede_madeira": "Parede de madeira",
-    "parede_pedra": "Parede de pedra", "piso": "Piso",
+    "parede_pedra": "Parede de pedra", "piso": "Piso", "trigo": "Trigo selvagem",
+    "plantacao": "Plantação de trigo", "tocha": "Tocha", "forno": "Forno", "bau": "Baú", "cama": "Cama",
 }
 
 
@@ -165,7 +211,8 @@ NOMES_OBJETOS = {
 # ===============================================================
 BIOMAS = {
     "planicie": {"nome": "Planície", "agua": 0.0,
-                 "recursos": [("arvore", 0.02), ("arbusto", 0.03), ("pedra", 0.012), ("capim", 0.07)],
+                 "recursos": [("arvore", 0.02), ("arbusto", 0.03), ("pedra", 0.012), ("capim", 0.07),
+                               ("trigo", 0.012)],
                  "animais": ["coelho", "galinha", "cervo"], "predadores": ["lobo"],
                  "noturnos": ["slime"]},
     "floresta": {"nome": "Floresta", "agua": 0.0,

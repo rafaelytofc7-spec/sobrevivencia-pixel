@@ -14,6 +14,7 @@ import random
 from config import (TILE, TAMANHO_CHUNK, CHAO_AGUA, LAMA, MAX_PASSIVOS, MAX_PREDADORES,
                     MAX_MONSTROS_BASE, MAX_POR_CHUNK, TEMPO_ENTRE_SPAWNS, RAIO_LUZ_FOGUEIRA)
 from dados import BIOMAS, CRIATURAS
+from estacoes import FILHOTES, PASSIVOS, PREDADORES_EXTRA
 from entidades import Criatura
 from mundo import chunk_do_bloco
 from ruido import numero_chunk
@@ -29,6 +30,16 @@ class Ecossistema:
     # -----------------------------------------------------------
     def contar(self, comportamento):
         return sum(1 for c in self.jogo.criaturas if c.comportamento == comportamento)
+
+    @property
+    def estacao(self):
+        return getattr(self.jogo, "estacao", "verao")
+
+    def limite_passivos(self):
+        return int(MAX_PASSIVOS * PASSIVOS[self.estacao])
+
+    def limite_predadores(self):
+        return MAX_PREDADORES + PREDADORES_EXTRA[self.estacao]
 
     def limite_monstros(self):
         return min(14, MAX_MONSTROS_BASE + self.jogo.dia - 1)
@@ -52,7 +63,7 @@ class Ecossistema:
     # -----------------------------------------------------------
     def ao_carregar_chunk(self, ch):
         """Animais iniciais de um chunk recém-carregado (sorteio fixo pela semente)."""
-        if self.contar("passivo") >= MAX_PASSIVOS:
+        if self.contar("passivo") >= self.limite_passivos():
             return
         rng = random.Random(numero_chunk(self.jogo.mundo.semente, ch.cx, ch.cy) + 7)
         bioma = ch.biomas[CH * CH // 2]
@@ -81,19 +92,19 @@ class Ecossistema:
         # --- filhotes ---
         for c in list(jogo.criaturas):
             if c.comportamento == "passivo" and c.reproduzir <= 0:
-                c.reproduzir = random.uniform(90, 160)
+                c.reproduzir = random.uniform(90, 160) * FILHOTES[self.estacao]   # primavera: mais filhotes
                 par = any(o is not c and o.tipo == c.tipo and math.hypot(o.x - c.x, o.y - c.y) < 48
                           for o in jogo.criaturas)
                 chunk_c = chunk_do_bloco(int(c.x // TILE), int(c.y // TILE))
                 no_chunk = sum(1 for o in jogo.criaturas if o.tipo == c.tipo and
                                chunk_do_bloco(int(o.x // TILE), int(o.y // TILE)) == chunk_c)
-                if par and no_chunk < MAX_POR_CHUNK and self.contar("passivo") < MAX_PASSIVOS:
+                if par and no_chunk < MAX_POR_CHUNK and self.contar("passivo") < self.limite_passivos():
                     filhote = Criatura(c.tipo, c.x + random.uniform(-6, 6), c.y + random.uniform(-4, 4))
                     if not jogo.mundo.colide(filhote.retangulo()):
                         jogo.criaturas.append(filhote)
 
         # --- quem some ---
-        fogueiras = jogo.mundo.lista_fogueiras()
+        fogueiras = [o for o, _ in jogo.mundo.lista_luzes() if o.tipo != "forno"]
         vivas = []
         for c in jogo.criaturas:
             if c.morta:
@@ -134,9 +145,10 @@ class Ecossistema:
         especie = None
         if noite and info["noturnos"] and sorteio < 0.75 and self.contar("monstro") < self.limite_monstros():
             especie = random.choice(info["noturnos"])
-        elif info["predadores"] and sorteio < 0.12 and self.contar("predador") < MAX_PREDADORES:
+        elif info["predadores"] and sorteio < (0.2 if self.estacao == "inverno" else 0.12) \
+                and self.contar("predador") < self.limite_predadores():
             especie = random.choice(info["predadores"])
-        elif not noite and info["animais"] and sorteio < 0.6 and self.contar("passivo") < MAX_PASSIVOS:
+        elif not noite and info["animais"] and sorteio < 0.6 and self.contar("passivo") < self.limite_passivos():
             especie = random.choice(info["animais"])
         if especie is None:
             return

@@ -15,11 +15,13 @@ import pygame
 from config import (TILE, TAMANHO_CHUNK, RAIO_CARREGAR, RAIO_DESCARREGAR,
                     AGUA_FUNDA, AGUA_RASA, LAMA, AREIA, CHAO_AGUA, CHAO_DO_BIOMA,
                     NIVEL_AGUA_BASE, PROFUNDIDADE_FUNDA, TEMPO_FRUTAS_VOLTAR,
-                    TEMPO_REGENERAR_DANO, COMBUSTIVEL_INICIAL)
+                    TEMPO_REGENERAR_DANO, COMBUSTIVEL_INICIAL, TAMANHO_BAU,
+                    RAIO_LUZ_FOGUEIRA, RAIO_LUZ_TOCHA)
 from dados import OBJETOS, BIOMAS
 from ruido import fractal, ruido, numero_chunk
 
 CH = TAMANHO_CHUNK
+TEMPO_CRESCER = 40.0          # segundos por estágio da plantação (na estação normal)
 
 
 # ===============================================================
@@ -37,6 +39,8 @@ class Objeto:
         self.tempo_frutas = 0.0
         self.combustivel = COMBUSTIVEL_INICIAL if tipo == "fogueira" else 0.0
         self.tremor = 0.0
+        self.crescimento = 0.0             # plantação: segundos crescendo
+        self.conteudo = [None] * TAMANHO_BAU if tipo == "bau" else None
 
     @property
     def info(self):
@@ -72,6 +76,15 @@ class Objeto:
             return 0
         return min(3, 1 + int((1.0 - self.vida / self.vida_max) * 3))
 
+    @property
+    def estagio(self):
+        """Plantação: 0 (semente) ... 3 (madura)."""
+        return min(3, int(self.crescimento / TEMPO_CRESCER))
+
+    @property
+    def maduro(self):
+        return self.tipo == "plantacao" and self.estagio >= 3
+
     def retangulo_desenho(self):
         extra = OBJETOS[self.tipo].get("altura", 0)
         return pygame.Rect(self.tx * TILE, self.ty * TILE - extra, TILE, TILE + extra)
@@ -82,17 +95,23 @@ class Objeto:
             return pygame.Rect(x, y, TILE, TILE)
         if self.tipo in ("arvore", "arvore_pantano", "pinheiro", "cacto"):
             return pygame.Rect(x + 4, y + 6, 8, 9)
+        if self.tipo in ("bau", "cama", "forno"):
+            return pygame.Rect(x + 1, y + 4, 14, 11)
         return pygame.Rect(x + 2, y + 5, 12, 10)
 
-    def atualizar(self, dt):
+    def atualizar(self, dt, fator=1.0):
+        """fator = crescimento da estação (0 no inverno)."""
         if self.tremor > 0:
             self.tremor = max(0.0, self.tremor - dt)
         if self.vida < self.vida_max:
             self.tempo_sem_golpe += dt
             if self.tempo_sem_golpe >= TEMPO_REGENERAR_DANO:
                 self.vida = self.vida_max
-        if self.tipo == "arbusto" and not self.tem_frutas:
-            self.tempo_frutas += dt
+        if self.tipo == "plantacao":
+            if self.crescimento < TEMPO_CRESCER * 3:
+                self.crescimento += dt * fator
+        elif self.tipo == "arbusto" and not self.tem_frutas:
+            self.tempo_frutas += dt * fator
             if self.tempo_frutas >= TEMPO_FRUTAS_VOLTAR:
                 self.tem_frutas = True
                 self.tempo_frutas = 0.0
@@ -106,6 +125,10 @@ class Objeto:
             d["tf"] = round(self.tempo_frutas, 1)
         if self.tipo == "fogueira":
             d["c"] = round(self.combustivel, 1)
+        if self.tipo == "plantacao":
+            d["g"] = round(self.crescimento, 1)
+        if self.conteudo is not None:
+            d["i"] = [list(e) if e else None for e in self.conteudo]
         return d
 
     @staticmethod
@@ -115,6 +138,10 @@ class Objeto:
         o.tempo_frutas = d.get("tf", 0.0)
         if "c" in d:
             o.combustivel = d["c"]
+        o.crescimento = d.get("g", 0.0)
+        if o.conteudo is not None and isinstance(d.get("i"), list):
+            itens = [list(e) if e else None for e in d["i"]][:TAMANHO_BAU]
+            o.conteudo = itens + [None] * (TAMANHO_BAU - len(itens))
         return o
 
 
@@ -263,8 +290,10 @@ class Mundo:
         self.itens = []             # itens no chão (dos chunks carregados)
         self.deslocamento_agua = 0.0
         self.fogueiras = []         # fogueiras dos chunks carregados
+        self.luzes = []             # fogueiras, tochas e fornos dos chunks carregados
         self._fogueiras_sujas = True
         self.ao_carregar = None     # função chamada quando um chunk novo é carregado
+        self.fator_crescimento = 1.0  # estação: quão rápido frutas/plantações crescem
 
     # ----------------------- chunks -----------------------
     def gerar(self, cx, cy):
@@ -384,13 +413,13 @@ class Mundo:
         if ch:
             ch.modificado = True
 
-    def colide(self, ret):
-        """True se o retângulo bate em água funda ou objeto sólido."""
+    def colide(self, ret, agua=True):
+        """True se o retângulo bate em objeto sólido (ou em água funda, se agua=True)."""
         x0, y0 = int(ret.left // TILE), int(ret.top // TILE)
         x1, y1 = int((ret.right - 1) // TILE), int((ret.bottom - 1) // TILE)
         for ty in range(y0, y1 + 1):
             for tx in range(x0, x1 + 1):
-                if self.tipo_chao(tx, ty) == AGUA_FUNDA:
+                if agua and self.tipo_chao(tx, ty) == AGUA_FUNDA:
                     return True
                 obj = self.objeto(tx, ty)
                 if obj and obj.solido and ret.colliderect(obj.retangulo_colisao()):
@@ -456,16 +485,23 @@ class Mundo:
 
     def lista_fogueiras(self):
         if self._fogueiras_sujas:
-            self.fogueiras = [o for ch in self.chunks.values() for o in ch.objetos.values()
-                              if o.tipo == "fogueira"]
+            self.luzes = [o for ch in self.chunks.values() for o in ch.objetos.values()
+                          if o.tipo in ("fogueira", "tocha", "forno")]
+            self.fogueiras = [o for o in self.luzes if o.tipo == "fogueira"]
             self._fogueiras_sujas = False
         return [f for f in self.fogueiras if f.acesa]
+
+    def lista_luzes(self):
+        """[(objeto, raio)] de tudo que ilumina: fogueiras acesas, tochas e fornos."""
+        self.lista_fogueiras()
+        return [(o, RAIO_LUZ_FOGUEIRA if o.tipo == "fogueira" else RAIO_LUZ_TOCHA if o.tipo == "tocha" else 34)
+                for o in self.luzes if o.tipo != "fogueira" or o.acesa]
 
     def atualizar(self, dt):
         for ch in self.chunks.values():
             for obj in ch.objetos.values():
-                if obj.tremor > 0 or obj.vida < obj.vida_max or obj.tipo in ("arbusto", "fogueira"):
-                    obj.atualizar(dt)
+                if obj.tremor > 0 or obj.vida < obj.vida_max or obj.tipo in ("arbusto", "fogueira", "plantacao"):
+                    obj.atualizar(dt, self.fator_crescimento)
             for obj in ch.pisos.values():
                 if obj.vida < obj.vida_max:
                     obj.atualizar(dt)

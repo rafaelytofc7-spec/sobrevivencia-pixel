@@ -15,7 +15,7 @@ ALTURA_INTERNA = 200
 LARGURA_TELA = LARGURA_INTERNA * ESCALA   # 960
 ALTURA_TELA = ALTURA_INTERNA * ESCALA     # 600
 FPS = 60
-TITULO = "Sobrevivência Pixel - v0.3"
+TITULO = "Sobrevivência Pixel - v0.4"
 
 # ---------------------------------------------------------------
 # Mundo infinito em chunks
@@ -74,6 +74,26 @@ RAIO_IMA_ITENS = 22
 RAIO_PEGAR_ITENS = 6
 RAIO_ESTACAO = 48             # distância para usar bancada/fogueira na criação
 
+# movimento suave, corrida, rolamento e natação
+ACELERACAO = 520.0            # pixels/s² para chegar na velocidade
+ATRITO = 640.0                # pixels/s² para parar
+MULT_CORRIDA = 1.6            # Shift
+MULT_AGUA_RASA = 0.6
+MULT_NADANDO = 0.45
+ENERGIA_MAX = 100.0
+GASTO_CORRIDA = 18.0          # energia por segundo correndo
+GASTO_ROLAR = 22.0            # energia por rolamento
+REGEN_ENERGIA = 16.0          # energia por segundo descansando
+ESPERA_REGEN_ENERGIA = 0.8    # segundos sem gastar antes de recuperar
+GASTO_NADO = 4.0              # energia por segundo nadando em água funda
+DURACAO_ROLAR = 0.32
+VELOCIDADE_ROLAR = 165.0
+AR_MAX = 100.0
+GASTO_AR = 5.0                # ar por segundo em água funda (~20 s)
+REGEN_AR = 40.0
+DANO_AFOGAR = 6.0             # vida por segundo sem ar
+CANTO_DESLIZE = 5             # pixels de "correção de quina" ao bater em algo
+
 # ---------------------------------------------------------------
 # Objetos
 # ---------------------------------------------------------------
@@ -83,11 +103,15 @@ TEMPO_SUMIR_ITEM = 300.0
 COMBUSTIVEL_INICIAL = 180.0
 COMBUSTIVEL_POR_MADEIRA = 60.0
 RAIO_LUZ_FOGUEIRA = 64
+RAIO_LUZ_TOCHA = 44
+RAIO_LUZ_TOCHA_MAO = 52
+TAMANHO_BAU = 18
 
 # ---------------------------------------------------------------
 # Dia e noite
 # ---------------------------------------------------------------
 DURACAO_DIA = 240.0
+DIAS_POR_ESTACAO = 3          # Primavera -> Verão -> Outono -> Inverno
 HORA_INICIAL = 7.0
 ESCURIDAO_MAXIMA = 0.85
 
@@ -111,6 +135,7 @@ TAMANHO_INVENTARIO = 36       # 9 da barra + 27 da mochila
 # ---------------------------------------------------------------
 PASTA_JOGO = os.path.dirname(os.path.abspath(__file__))
 ARQUIVO_SAVE = os.path.join(PASTA_JOGO, "save.json")
+ARQUIVO_CONTROLES = os.path.join(PASTA_JOGO, "controles.json")
 
 # ---------------------------------------------------------------
 # Cores da interface
@@ -123,3 +148,5 @@ COR_DESTAQUE = (250, 220, 90)
 COR_VIDA = (214, 56, 56)
 COR_FOME = (230, 150, 50)
 COR_SEDE = (60, 140, 230)
+COR_ENERGIA = (120, 210, 80)
+COR_AR = (150, 220, 250)
