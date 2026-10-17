@@ -266,18 +266,25 @@ class Interface:
         cx, cy, r = ret.x + 46, ret.y + 62, 32
         hora = jogo.hora()
         noite = jogo.e_noite()
-        ceu = (40, 44, 90) if noite else (110, 170, 230)
+        sub = jogo.subterraneo()
+        ceu = (52, 44, 50) if sub else (40, 44, 90) if noite else (110, 170, 230)
         pygame.draw.circle(tela, BORDA_ESC, (cx, cy), r + 4)
         pygame.draw.circle(tela, ceu, (cx, cy), r)
         pygame.draw.rect(tela, FUNDO, (cx - r - 5, cy + 1, 2 * r + 10, r + 6))
         pygame.draw.rect(tela, (70, 120, 60), (cx - r, cy - 4, 2 * r, 5))
         ang = math.pi * (1 - ((hora - 6) % 12) / 12.0)
         ix, iy = cx + math.cos(ang) * (r - 10), cy - 6 - math.sin(ang) * (r - 14)
-        icone = self.hud["lua" if (hora < 6 or hora >= 18) else "sol"]
-        tela.blit(icone, (int(ix) - 12, int(iy) - 12))
+        if not sub:
+            icone = self.hud["lua" if (hora < 6 or hora >= 18) else "sol"]
+            tela.blit(icone, (int(ix) - 12, int(iy) - 12))
         h, m = int(hora), int((hora % 1) * 60)
         x = ret.x + 92
         self.texto(tela, f"Dia {jogo.dia}   {h:02d}:{m:02d}", (x, ret.y + 12), self.fonte)
+        if sub:
+            # na masmorra não se vê o céu: sem estação nem tempo
+            self.texto(tela, "Masmorra", (x, ret.y + 40), self.fonte, (200, 170, 255))
+            self.texto(tela, "Subsolo - sem céu", (x, ret.y + 66), self.fonte_peq, (150, 144, 170))
+            return
         est = jogo.estacao
         tela.blit(self.hud_peq[est], (x, ret.y + 38))
         dia_est = (jogo.dia - 1) % DIAS_POR_ESTACAO + 1
@@ -299,6 +306,14 @@ class Interface:
         ret = pygame.Rect(LARGURA_TELA - lado - 14, 120, lado + 6, lado + 6)
         self.ret_minimapa = ret
         tela.blit(self.moldura(ret.w, ret.h, "barra"), ret.topleft)
+        if jogo.subterraneo():
+            dentro = ret.inflate(-6, -6)
+            tela.fill((14, 12, 20), dentro)
+            self.texto(tela, "Masmorra", (dentro.centerx, dentro.centery - 14), self.fonte_peq, (200, 170, 255),
+                       centro=True)
+            self.texto(tela, "sem mapa aqui", (dentro.centerx, dentro.centery + 6), self.fonte_peq,
+                       (150, 144, 170), centro=True)
+            return
         dentro = ret.inflate(-6, -6)
         j = jogo.jogador
         img, origem = mm.desenhar_regiao(jogo.mundo, j.x / 16, j.y / 16, dentro.w, dentro.h, px)
@@ -707,9 +722,10 @@ class Interface:
         dicas = ["Estações: Primavera, Verão, Outono e Inverno (3 dias cada). No inverno tudo neva, faz frio",
                  "e as frutas não crescem. Fogueira esquenta, sopa ajuda. Forno: carvão, barras de ferro e pão.",
                  "Cama marca onde você renasce e à noite pula para a manhã. Baú guarda itens. Tochas iluminam.",
-                 "Lobos caçam animais e você (mais no inverno). À noite: slimes e aranhas. Deserto: escorpiões."]
+                 "Lobos caçam animais e você (mais no inverno). À noite: slimes e aranhas. Deserto: escorpiões.",
+                 "Explore: vilas (troque com aldeões), cidadelas, castelos, ruínas e masmorras (E na escada)."]
         for n, d in enumerate(dicas):
-            self.texto(tela, d, (ret.centerx, ret.bottom - 146 + n * 22), self.fonte_peq, (200, 232, 200), centro=True)
+            self.texto(tela, d, (ret.centerx, ret.bottom - 160 + n * 22), self.fonte_peq, (200, 232, 200), centro=True)
         self.texto(tela, "Pressione qualquer tecla ou clique para continuar",
                    (ret.centerx, ret.bottom - 40), self.fonte, (255, 240, 150), centro=True)
 

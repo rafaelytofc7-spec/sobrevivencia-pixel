@@ -357,6 +357,7 @@ class Texturas:
     def desenhar_chunk(self, sup, ch, mundo, estacao):
         """Pinta o chão de um chunk (com transições) na superfície 'sup' (256x256)."""
         tiles = self.tiles(estacao)
+        extras = getattr(self, "extras", {})      # tipos de chão de outros módulos (ex.: masmorra)
         chao = ch.chao
         x0, y0 = ch.cx * CH, ch.cy * CH
 
@@ -373,6 +374,11 @@ class Texturas:
                 h = (tx * 73856093) ^ (ty * 19349663)
                 var = (h >> 3) % N_VARIANTES
                 px, py = i * TILE, j * TILE
+                if tipo not in prio:
+                    lst = extras.get(tipo)
+                    if lst:
+                        sup.blit(lst[var % len(lst)], (px, py))
+                    continue
                 sup.blit(tiles[tipo][var], (px, py))
                 p = prio[tipo]
                 mv = (h >> 7) & 1
@@ -380,15 +386,15 @@ class Texturas:
                 lados = []
                 for lado, (dx, dy) in DIRECOES.items():
                     v = tipo_em(i + dx, j + dy)
-                    if prio[v] > p:
+                    if prio.get(v, -1) > p:
                         lados.append((prio[v], v, (lado, mv)))
                 for canto, (dx, dy) in CANTOS.items():
                     v = tipo_em(i + dx, j + dy)
-                    if prio[v] > p:
+                    if prio.get(v, -1) > p:
                         # só se os dois lados vizinhos do canto não forem desse tipo (senão a borda já cobre)
                         a = tipo_em(i + dx, j)
                         b = tipo_em(i, j + dy)
-                        if prio[a] < prio[v] and prio[b] < prio[v]:
+                        if prio.get(a, -1) < prio[v] and prio.get(b, -1) < prio[v]:
                             lados.append((prio[v], v, (canto, mv)))
                 if not lados:
                     continue

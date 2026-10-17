@@ -27,6 +27,8 @@ import estacoes
 import personagem
 from ruido import semente_de_texto
 from salvar import salvar_jogo, carregar_jogo, existe_save
+from sistema_estruturas import SistemaEstruturas      # [ESTRUTURAS]
+from estruturas import NOMES_ESTRUTURAS
 
 CH = TAMANHO_CHUNK
 PX_CHUNK = CH * TILE         # 256 pixels por chunk
@@ -42,6 +44,8 @@ COR_LASCAS = {
     "trigo": [(220, 186, 80), (120, 170, 70)], "plantacao": [(220, 186, 80), (110, 76, 48)],
     "tocha": [(240, 120, 40)], "forno": [(132, 134, 148)], "bau": [(160, 106, 58)], "cama": [(190, 60, 60)],
 }
+CORES_ESTRUTURAS = {"vila": (240, 200, 90), "cidadela": (200, 200, 220), "castelo": (230, 90, 90),
+                    "masmorra": (170, 110, 230), "ruina": (150, 170, 130), "tesouro": (255, 230, 80)}
 CHAO_PLANTAVEL = (GRAMA, GRAMA_FLORESTA, GRAMA_PANTANO, LAMA)
 ANIMADOS = ("capim", "junco", "trigo", "plantacao", "arvore", "arvore_pantano", "pinheiro")
 COMIDA_CRUA = {"carne_crua": "carne_assada", "peixe": "peixe_assado"}
@@ -53,6 +57,8 @@ class Jogo:
         self.cena = pygame.Surface((LARGURA_INTERNA, ALTURA_INTERNA))
         self.mascara_luz = pygame.Surface((LARGURA_INTERNA, ALTURA_INTERNA))
         self.sprites = Sprites()
+        for est in estacoes.ORDEM:           # prepara os tiles das 4 estações (evita travadinha na troca)
+            self.sprites.texturas.tiles(est)
         self.interface = Interface(self.sprites)
         self.pos_mouse = (LARGURA_TELA // 2, ALTURA_TELA // 2)
         self.botoes_mouse = (False, False, False)
@@ -84,6 +90,7 @@ class Jogo:
         self.criaturas = []
         self.ecossistema = Ecossistema(self)
         self.mundo.ao_carregar = self.ecossistema.ao_carregar_chunk
+        self.estruturas = SistemaEstruturas(self)            # [ESTRUTURAS]
         self.clima = Clima(semente)
         self.popups = []
         self.particulas = []
@@ -136,6 +143,7 @@ class Jogo:
         self.dia = dados.get("dia", 1)
         self.derrotados = dados.get("derrotados", 0)
         self.carregar_extras(dados)
+        self.estruturas.carregar_dict(dados.get("estruturas", {}))   # [ESTRUTURAS]
         self.mundo.atualizar_chunks(self.jogador.x, self.jogador.y, limite=99)
         self.estado = "jogando"
         self.centralizar_camera()
@@ -174,6 +182,8 @@ class Jogo:
         return self.tempo / DURACAO_DIA * 24.0
 
     def nivel_escuridao(self):
+        if self.estruturas.escuridao() is not None:         # [ESTRUTURAS] masmorra
+            return self.estruturas.escuridao()
         luz = 0.5 - 0.5 * math.cos(2 * math.pi * self.hora() / 24.0)
         return max(0.0, min(1.0, (0.55 - luz) / 0.55)) * ESCURIDAO_MAXIMA
 
@@ -223,6 +233,8 @@ class Jogo:
     # Eventos
     # ===========================================================
     def tratar_evento(self, ev):
+        if self.estruturas.tratar_evento(ev):               # [ESTRUTURAS] janela de trocas
+            return
         if ev.type == pygame.MOUSEMOTION:
             if self.estado == "mapa" and self.arrastando_mapa:
                 mx, my = ev.pos
@@ -378,6 +390,9 @@ class Jogo:
         return (cx + d[0] * 20, cy + d[1] * 20)
 
     def abrir_mapa(self):
+        if self.subterraneo():
+            self.avisar("O mapa não funciona debaixo da terra", 1.5)
+            return
         self.estado = "mapa"
         self.centralizar_mapa()
 
@@ -654,6 +669,8 @@ class Jogo:
     # ===========================================================
     def golpear(self, obj):
         j = self.jogador
+        if self.estruturas.golpear(obj):                    # [ESTRUTURAS] baú, escada...
+            return
         info = OBJETOS[obj.tipo]
         ferramenta = info.get("ferramenta")
         poder = j.inventario.poder_ferramenta(ferramenta) if ferramenta else 1
@@ -791,6 +808,8 @@ class Jogo:
 
     def clique_direito(self):
         """Botão direito: construir, consumir, pescar ou usar a fogueira."""
+        if self.estruturas.clique_direito():                # [ESTRUTURAS] NPC, baú, escada
+            return
         inv = self.jogador.inventario
         item = inv.item_selecionado()
         tx, ty = self.bloco_mouse()
@@ -931,6 +950,8 @@ class Jogo:
         if j.espera_coleta > 0:
             return
         j.espera_coleta = TEMPO_ENTRE_GOLPES
+        if self.estruturas.interagir():                     # [ESTRUTURAS] NPC, baú, escada
+            return
         cx, cy = j.centro
         inv = j.inventario
         fogueira = self.mundo.objeto_mais_proximo(cx, cy, 36, tipos=("fogueira",))
@@ -962,6 +983,9 @@ class Jogo:
             return ""
         if self.pesca:
             return "Clique para fisgar!" if self.pesca["mordendo"] > 0 else "Esperando o peixe morder..."
+        dica = self.estruturas.dica()                       # [ESTRUTURAS]
+        if dica:
+            return dica
         c = self.criatura_no_mouse()
         if c:
             return f"[Clique] Atacar {c.info['nome']}"
@@ -1063,6 +1087,9 @@ class Jogo:
     # Cama, renascer, temperatura e mapa
     # ===========================================================
     def usar_cama(self, cama):
+        if self.subterraneo():
+            self.avisar("Não dá para dormir na masmorra!")
+            return
         self.ponto_renascer = (cama.tx, cama.ty)
         if not self.e_noite():
             self.avisar("Ponto de renascer marcado. Só dá para dormir à noite.")
@@ -1121,12 +1148,20 @@ class Jogo:
     def temperatura_atual(self):
         return self._temp
 
+    def subterraneo(self):
+        e = getattr(self, "estruturas", None)
+        return bool(e and e.subterraneo)
+
     def calcular_temperatura(self):
         j = self.jogador
         tx, ty = int(j.x // TILE), int(j.y // TILE)
         cx, cy = j.centro
         fogo = self.mundo.estacao_perto("fogueira", cx, cy, 56) is not None or \
             self.mundo.estacao_perto("forno", cx, cy, 40) is not None
+        if self.subterraneo():                      # debaixo da terra é sempre fresco
+            t = 12.0 + (16 if fogo else 0)
+            self._temp = (t, estacoes.efeito_temperatura(t)[0])
+            return t
         t = estacoes.temperatura(self.mundo.bioma(tx, ty), self.estacao, self.nivel_escuridao() / ESCURIDAO_MAXIMA,
                                  self.clima.chuva, fogo, j.na_agua)
         if j.inventario.equipamento["corpo"] and t < 10:
@@ -1135,6 +1170,24 @@ class Jogo:
             t += 2
         self._temp = (t, estacoes.efeito_temperatura(t)[0])
         return t
+
+    def estruturas_descobertas(self):
+        """Estruturas já vistas (o id é "tipo:rx,ry", então dá para achar a região direto)."""
+        e = self.estruturas
+        cache = getattr(self, "_cache_descobertas", None)
+        if cache and cache[0] is e and cache[1] == len(e.descobertas):
+            return cache[2]
+        lista = []
+        for ident in sorted(e.descobertas):
+            try:
+                rx, ry = (int(v) for v in ident.split(":", 1)[1].split(","))
+            except (ValueError, IndexError):
+                continue
+            est = e.plano.regiao(rx, ry)
+            if est is not None and est.id == ident:
+                lista.append(est)
+        self._cache_descobertas = (e, len(e.descobertas), lista)
+        return lista
 
     def marcadores_mapa(self):
         """Pontos marcados no mapa e no minimapa."""
@@ -1146,6 +1199,14 @@ class Jogo:
             for o in ch.objetos.values():
                 if o.tipo == "bau":
                     lista.append({"tx": o.tx + 0.5, "ty": o.ty + 0.5, "tipo": "bau", "cor": (200, 150, 80)})
+        e = getattr(self, "estruturas", None)
+        if e is not None and not e.subterraneo:
+            for est in self.estruturas_descobertas():
+                if True:
+                    x0, y0, x1, y1 = est.caixa
+                    lista.append({"tx": (x0 + x1) / 2 + 0.5, "ty": (y0 + y1) / 2 + 0.5, "tipo": est.tipo,
+                                  "nome": NOMES_ESTRUTURAS.get(est.tipo, est.tipo),
+                                  "cor": CORES_ESTRUTURAS.get(est.tipo, (250, 200, 80))})
         lista.extend(self.marcadores_extra)
         return lista
 
@@ -1224,7 +1285,8 @@ class Jogo:
         self.acoes_mouse()
         self.atualizar_pesca(dt)
         self.flechas = [f for f in self.flechas if not self.atualizar_flecha(f, dt)]
-        self.minimapa.atualizar(dt, self)
+        if not self.subterraneo():
+            self.minimapa.atualizar(dt, self)
         self.mundo.atualizar_chunks(j.x, j.y, limite=CHUNKS_POR_QUADRO)
         self.mundo.atualizar(dt)
         self.mundo.itens = [it for it in self.mundo.itens if not it.atualizar(dt, j, self.mundo)]
@@ -1234,6 +1296,7 @@ class Jogo:
             c.atualizar(dt, self)
         self.ecossistema.atualizar(dt)
         self.atualizar_chuva(dt)
+        self.estruturas.atualizar(dt)                       # [ESTRUTURAS]
         self.centralizar_camera()
         if j.vida <= 0:
             self.estado = "morto"
@@ -1243,8 +1306,13 @@ class Jogo:
         nova = estacoes.estacao_do_dia(self.dia)
         if nova != self.estacao:
             self.estacao = nova
-            for ch in self.mundo.chunks.values():
-                ch.sujo = True                      # redesenha o chão com as cores da estação
+            mundos = {id(self.mundo): self.mundo}
+            sup = getattr(getattr(self, "estruturas", None), "superficie", None)
+            if sup is not None:
+                mundos[id(sup)] = sup
+            for m in mundos.values():
+                for ch in m.chunks.values():
+                    ch.sujo = True                  # redesenha o chão com as cores da estação
             self.avisar(f"Chegou o {estacoes.NOMES[nova].lower()}!" if nova != "primavera"
                         else "Chegou a primavera!", 4)
         self.clima.estacao = nova
@@ -1303,7 +1371,7 @@ class Jogo:
 
     def atualizar_chuva(self, dt):
         neve = self.estacao == "inverno"
-        alvo = int(110 * self.clima.chuva)
+        alvo = 0 if self.subterraneo() else int(110 * self.clima.chuva)
         while len(self.gotas) < alvo:
             self.gotas.append([random.uniform(0, LARGURA_INTERNA + 40), random.uniform(-20, ALTURA_INTERNA),
                                random.uniform(0, 6.3)])
@@ -1333,10 +1401,11 @@ class Jogo:
         if ch.superficie is None:
             ch.superficie = pygame.Surface((PX_CHUNK, PX_CHUNK))
         sup = ch.superficie
+        self.sprites.texturas.extras = self.sprites.chao
         self.sprites.texturas.desenhar_chunk(sup, ch, self.mundo, self.estacao)
         x0, y0 = ch.cx * CH, ch.cy * CH
-        for (tx, ty) in ch.pisos:
-            sup.blit(self.sprites.piso, ((tx - x0) * TILE, (ty - y0) * TILE))
+        for (tx, ty), p in ch.pisos.items():                # [ESTRUTURAS] pisos variados
+            sup.blit(self.sprites.sprite_objeto(p), ((tx - x0) * TILE, (ty - y0) * TILE))
         ch.sujo = False
 
     def desenhar(self):
@@ -1452,6 +1521,7 @@ class Jogo:
             ui.desenhar_mapa(self.tela, self, self.pos_mouse)
         elif self.estado == "dormindo":
             ui.desenhar_sono(self.tela, 1 - abs(self.sono - 1.0))
+        self.estruturas.desenhar_interface(self.tela)       # [ESTRUTURAS] trocas, chefe
         ui.desenhar_cursor(self.tela, self.pos_mouse, self.arrastando)
 
     def desenhar_objeto(self, cena, obj, cx, cy):
@@ -1590,6 +1660,7 @@ class Jogo:
             if -100 < fx < LARGURA_INTERNA + 100 and -100 < fy < ALTURA_INTERNA + 100:
                 raio = raio + (2 if int(self.tempo_total * 6 + f.tx) % 2 else 0)
                 m.blit(gradiente_luz(raio), (fx - raio, fy - raio), special_flags=pygame.BLEND_RGB_ADD)
+        self.estruturas.desenhar_luzes(m, cx, cy)           # [ESTRUTURAS] tochas / masmorra
         cena.blit(m, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
 
 
