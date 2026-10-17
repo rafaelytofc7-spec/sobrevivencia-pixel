@@ -151,7 +151,7 @@ class SistemaEstruturas:
             nivel = est.baus.get((obj.tx, obj.ty), 1) if est else 1
             bioma = jogo.mundo.bioma(obj.tx, obj.ty)
         itens = baus.conteudo(jogo.mundo.semente, ident, bioma, nivel)
-        obj.tipo = "bau_aberto"
+        obj.tipo = "bau_tesouro_aberto"
         obj.vida = obj.vida_max
         jogo.mundo.marcar_modificado(obj)
         self.baus_abertos.add(ident)
@@ -163,7 +163,7 @@ class SistemaEstruturas:
                 jogo.popup(item, qtd - sobra)
             if sobra:
                 jogo.soltar_itens([(item, sobra)], cx, cy)
-        jogo.soltar_lascas(obj.centro, "bau", 8)
+        jogo.soltar_lascas(obj.centro, "bancada", 8)
         nomes = ", ".join(f"{q}x {ITENS[i]['nome']}" for i, q in itens)
         jogo.avisar(f"Baú aberto: {nomes}", 4)
         return True
@@ -185,7 +185,7 @@ class SistemaEstruturas:
 
     def acao_objeto(self, obj):
         """Ação de E / botão direito num objeto. True se fez algo."""
-        if obj.tipo == "bau":
+        if obj.tipo == "bau_tesouro":
             return self.abrir_bau(obj)
         if obj.tipo in ("escada_descer", "escada_subir"):
             return self.usar_escada(obj)
@@ -197,7 +197,7 @@ class SistemaEstruturas:
     def objeto_perto(self):
         cx, cy = self.jogo.jogador.centro
         return self.jogo.mundo.objeto_mais_proximo(cx, cy, ALCANCE_OBJ,
-                                                   tipos=("bau", "escada_descer", "escada_subir", "poco"))
+                                                   tipos=("bau_tesouro", "escada_descer", "escada_subir", "poco"))
 
     # ===========================================================
     # Masmorras
@@ -269,14 +269,14 @@ class SistemaEstruturas:
             self.conversar(npc)
             return True
         obj, alcanca = self.jogo.alvo_mouse()
-        if obj and alcanca and obj.tipo in ("bau", "escada_descer", "escada_subir", "poco"):
+        if obj and alcanca and obj.tipo in ("bau_tesouro", "escada_descer", "escada_subir", "poco"):
             return self.acao_objeto(obj)
         return False
 
     def golpear(self, obj):
         """Botão esquerdo / E num objeto. True = não quebrar do jeito normal."""
         jogo = self.jogo
-        if obj.tipo == "bau":
+        if obj.tipo == "bau_tesouro":
             return self.abrir_bau(obj)
         if obj.tipo in ("escada_descer", "escada_subir"):
             jogo.avisar("Aperte E ou o botão direito para usar a escada", 1.5)
@@ -299,10 +299,10 @@ class SistemaEstruturas:
             acao = "Negociar com" if isinstance(npc, Aldeao) else "Falar com"
             return f"[E / Botão direito] {acao} {npc.info['nome']}"
         obj, alcanca = jogo.alvo_mouse()
-        if not (obj and alcanca and obj.tipo in ("bau", "escada_descer", "escada_subir", "poco")):
+        if not (obj and alcanca and obj.tipo in ("bau_tesouro", "escada_descer", "escada_subir", "poco")):
             obj = self.objeto_perto()
         if obj:
-            return {"bau": "[Clique / E] Abrir baú", "poco": "[E] Beber água do poço",
+            return {"bau_tesouro": "[Clique / E] Abrir baú", "poco": "[E] Beber água do poço",
                     "escada_descer": "[E / Botão direito] Descer para a masmorra",
                     "escada_subir": "[E / Botão direito] Subir para a superfície"}.get(obj.tipo, "")
         return ""
@@ -361,8 +361,28 @@ class SistemaEstruturas:
         """Lá embaixo é sempre escuro (None = usar a hora do dia)."""
         return ESCURIDAO_MAXIMA if self.masmorra else None
 
+    def _luzes_visiveis(self, cx, cy):
+        """[(x, y, raio)] na tela: fogueiras acesas e tochas."""
+        jogo = self.jogo
+        m = jogo.mundo
+        luzes = []
+        if hasattr(m, "lista_luzes"):                  # mundo.py novo já lista tochas/fornos
+            for o, raio in m.lista_luzes():
+                luzes.append((o.centro[0] - cx, o.centro[1] - cy, raio))
+            return luzes
+        for f in m.lista_fogueiras():
+            luzes.append((f.centro[0] - cx, f.centro[1] - cy, RAIO_LUZ_FOGUEIRA))
+        margem = RAIO_LUZ_TOCHA // TILE + 1
+        for ty in range(cy // TILE - margem, (cy + ALTURA_INTERNA) // TILE + margem + 1):
+            for tx in range(cx // TILE - margem, (cx + LARGURA_INTERNA) // TILE + margem + 1):
+                o = m.objeto(tx, ty)
+                if o is not None and o.tipo == "tocha":
+                    luzes.append((tx * TILE + 8 - cx, ty * TILE + 4 - cy, RAIO_LUZ_TOCHA))
+        return luzes
+
     def desenhar_luzes(self, mascara, cx, cy):
-        """Soma a luz das tochas (e a escuridão total da masmorra) na máscara de luz."""
+        """Na masmorra: escuridão quase total + sua luz + tochas/fogueiras.
+        Na superfície: só soma a luz das tochas (se o mundo.py ainda não faz isso)."""
         jogo = self.jogo
         pisca = 2 if int(jogo.tempo_total * 6) % 2 else 0
         if self.masmorra:
@@ -370,20 +390,16 @@ class SistemaEstruturas:
             jx, jy = int(jogo.jogador.x - cx), int(jogo.jogador.y - 6 - cy)
             r = 62 + pisca
             mascara.blit(gradiente_luz(r, (210, 170, 120)), (jx - r, jy - r), special_flags=pygame.BLEND_RGB_ADD)
-            for f in jogo.mundo.lista_fogueiras():
-                fx, fy = int(f.centro[0] - cx), int(f.centro[1] - cy)
-                rf = RAIO_LUZ_FOGUEIRA + pisca
-                mascara.blit(gradiente_luz(rf), (fx - rf, fy - rf), special_flags=pygame.BLEND_RGB_ADD)
-        m = jogo.mundo
-        margem = RAIO_LUZ_TOCHA // TILE + 1
-        r = RAIO_LUZ_TOCHA + pisca
-        luz = gradiente_luz(r, (255, 190, 120))
-        for ty in range(cy // TILE - margem, (cy + ALTURA_INTERNA) // TILE + margem + 1):
-            for tx in range(cx // TILE - margem, (cx + LARGURA_INTERNA) // TILE + margem + 1):
-                o = m.objeto(tx, ty)
-                if o is not None and o.tipo == "tocha":
-                    px, py = tx * TILE + 8 - cx, ty * TILE + 4 - cy
-                    mascara.blit(luz, (px - r, py - r), special_flags=pygame.BLEND_RGB_ADD)
+            luzes = self._luzes_visiveis(cx, cy)
+        elif hasattr(jogo.mundo, "lista_luzes"):
+            return                                     # main.py novo já desenha as tochas
+        else:
+            luzes = [l for l in self._luzes_visiveis(cx, cy) if l[2] == RAIO_LUZ_TOCHA]
+        for (x, y, raio) in luzes:
+            if -raio < x < LARGURA_INTERNA + raio and -raio < y < ALTURA_INTERNA + raio:
+                r = int(raio) + pisca
+                cor = (255, 200, 140) if raio != RAIO_LUZ_TOCHA else (255, 190, 120)
+                mascara.blit(gradiente_luz(r, cor), (int(x) - r, int(y) - r), special_flags=pygame.BLEND_RGB_ADD)
 
     def desenhar_interface(self, tela):
         jogo = self.jogo

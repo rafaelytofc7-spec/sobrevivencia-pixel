@@ -31,13 +31,14 @@ ITENS_NOVOS = {
 
 # "piso": True = vai para a camada de pisos do chunk (desenhado no chão)
 OBJETOS_NOVOS = {
-    "bau":           {"vida": 4, "drops": [], "solido": True, "construcao": True},
-    "bau_aberto":    {"vida": 4, "ferramenta": "machado", "drops": [("madeira", 2)], "solido": True,
-                      "construcao": True},
+    "bau_tesouro":   {"vida": 4, "drops": [], "solido": True, "construcao": True},
+    "bau_tesouro_aberto": {"vida": 4, "ferramenta": "machado", "drops": [("madeira", 2)], "solido": True,
+                           "construcao": True},
     "porta":         {"vida": 4, "ferramenta": "machado", "drops": [("madeira", 2)], "solido": False,
                       "construcao": True, "altura": 4},
     "poco":          {"vida": 99, "drops": [], "solido": True, "construcao": True, "altura": 6},
-    "plantacao":     {"vida": 1, "drops": [("trigo", 2)], "solido": False, "construcao": True},
+    "plantacao_trigo":   {"vida": 1, "drops": [("trigo", 2)], "solido": False, "construcao": True},
+    "plantacao_abobora": {"vida": 1, "drops": [("frutas", 2)], "solido": False, "construcao": True},
     "cerca":         {"vida": 3, "ferramenta": "machado", "drops": [("madeira", 1)], "solido": True,
                       "construcao": True},
     "tocha":         {"vida": 1, "drops": [("tocha", 1)], "solido": False, "construcao": True, "altura": 2},
@@ -60,11 +61,11 @@ OBJETOS_NOVOS = {
 }
 TIPOS_PISO = {"piso"} | {t for t, d in OBJETOS_NOVOS.items() if d.get("piso")}
 # objetos que não quebram (o clique faz outra coisa: abrir, descer...)
-INQUEBRAVEIS = {"bau", "poco", "trono", "escada_descer", "escada_subir"}
+INQUEBRAVEIS = {"bau_tesouro", "poco", "trono", "escada_descer", "escada_subir"}
 
 NOMES_NOVOS = {
-    "bau": "Baú", "bau_aberto": "Baú vazio", "porta": "Porta", "poco": "Poço",
-    "plantacao": "Plantação", "cerca": "Cerca", "tocha": "Tocha", "cama": "Cama",
+    "bau_tesouro": "Baú de tesouro", "bau_tesouro_aberto": "Baú vazio", "porta": "Porta", "poco": "Poço",
+    "plantacao_trigo": "Plantação de trigo", "plantacao_abobora": "Plantação de abóbora", "cerca": "Cerca", "tocha": "Tocha", "cama": "Cama",
     "trono": "Trono", "estandarte": "Estandarte", "escada_descer": "Escada para a masmorra",
     "escada_subir": "Escada para a superfície", "ossos": "Ossos", "caminho": "Caminho",
     "piso_pedra": "Piso de pedra", "piso_arenito": "Piso de arenito", "tapete": "Tapete",
@@ -94,14 +95,24 @@ RECEITAS_NOVAS = [
 ]
 
 
+# Nomes que talvez já existam em dados.py (tocha, cama, trigo, pão...): se existirem,
+# a versão de dados.py VALE e a daqui é ignorada. Os que eu acrescentei ficam aqui:
+REGISTRADOS = set()
+
+
 def registrar():
-    """Acrescenta tudo nas tabelas de dados.py (pode ser chamado várias vezes)."""
-    ITENS.update(ITENS_NOVOS)
-    OBJETOS.update(OBJETOS_NOVOS)
-    NOMES_OBJETOS.update(NOMES_NOVOS)
+    """Acrescenta nas tabelas de dados.py só o que ainda não existe lá."""
+    for nome, d in ITENS_NOVOS.items():
+        if nome not in ITENS:
+            ITENS[nome] = d
+            REGISTRADOS.add(nome)
+    for nome, d in OBJETOS_NOVOS.items():
+        OBJETOS.setdefault(nome, d)
+    for nome, d in NOMES_NOVOS.items():
+        NOMES_OBJETOS.setdefault(nome, d)
     CRIATURAS.update(CRIATURAS_NOVAS)
     for rc in RECEITAS_NOVAS:
-        if not any(r["item"] == rc["item"] and r["custo"] == rc["custo"] for r in RECEITAS):
+        if not any(r["item"] == rc["item"] for r in RECEITAS):
             RECEITAS.append(rc)
 
 

@@ -435,7 +435,7 @@ if not getattr(_sp.criar_icones, "_com_estruturas", False):
     _criar_icones_original = _sp.criar_icones
 
     def _criar_icones_com_estruturas():
-        meus = {k: ITENS.pop(k) for k in list(DE.ITENS_NOVOS) if k in ITENS}
+        meus = {k: ITENS.pop(k) for k in list(DE.REGISTRADOS) if k in ITENS}
         try:
             ic = _criar_icones_original()
         finally:
@@ -471,14 +471,17 @@ def instalar(sp):
     madeira = ob["parede_madeira"]
     if len(madeira) < 2:
         madeira.append(parede_madeira_escura())
-    ob["bau"] = [sprite_bau(False), sprite_bau(False, ouro=True)]
-    ob["bau_aberto"] = [sprite_bau(True), sprite_bau(True, ouro=True)]
+    ob["bau_tesouro"] = [sprite_bau(False), sprite_bau(False, ouro=True)]
+    ob["bau_tesouro_aberto"] = [sprite_bau(True), sprite_bau(True, ouro=True)]
     ob["porta"] = [sprite_porta()]
     ob["poco"] = [sprite_poco()]
-    ob["plantacao"] = [sprite_plantacao(0), sprite_plantacao(1)]
+    ob["plantacao_trigo"] = [sprite_plantacao(0)]
+    ob["plantacao_abobora"] = [sprite_plantacao(1)]
     ob["cerca"] = [sprite_cerca()]
-    ob["tocha"] = [sprite_tocha(0)]
-    ob["cama"] = [sprite_cama()]
+    if "tocha" not in ob:                      # se sprites.py já tem tocha, usa a de lá
+        ob["tocha"] = [sprite_tocha(0)]
+        sp.tocha_quadros = [sprite_tocha(q) for q in range(3)]
+    ob.setdefault("cama", [sprite_cama()])
     ob["trono"] = [sprite_trono()]
     ob["estandarte"] = [sprite_estandarte(), sprite_estandarte((40, 70, 170))]
     ob["escada_descer"] = [sprite_escada(True)]
@@ -493,7 +496,6 @@ def instalar(sp):
     ob["piso_arenito"] = [piso_lajes((222, 196, 138), (182, 154, 100), (240, 220, 170))]
     ob["tapete"] = [piso_tapete()]
     ob["terra_arada"] = [piso_terra_arada()]
-    sp.tocha_quadros = [sprite_tocha(q) for q in range(3)]
     # NPCs e chefes
     for tipo, fabrica in FABRICA_NPCS.items():
         dir_ = [fabrica(0), fabrica(1)]

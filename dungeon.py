@@ -90,14 +90,14 @@ class PlantaMasmorra:
                     self.monstros.append(("esqueleto", p[0], p[1], False))
                 for p in ((x + 1, y + 1), (x + w - 2, y + 1), (x + w // 2, y + 1)):
                     if p not in self.objetos:
-                        self.objetos[p] = ("bau", 1)
+                        self.objetos[p] = ("bau_tesouro", 1)
                         self.baus[p] = 3
                 continue
             for p in livres[:rng.randint(1, 3)]:
                 self.monstros.append((rng.choice(MONSTROS), p[0], p[1], False))
             if rng.random() < 0.45 and len(livres) > 4:
                 p = livres[4]
-                self.objetos[p] = ("bau", 0)
+                self.objetos[p] = ("bau_tesouro", 0)
                 self.baus[p] = 2
             if rng.random() < 0.6 and len(livres) > 5:
                 self.objetos[livres[5]] = ("ossos", 0)
@@ -154,8 +154,8 @@ class GeradorMasmorra:
                 p = (x0 + i, y0 + j)
                 if p in pl.objetos:
                     t, v = pl.objetos[p]
-                    if t == "bau" and f"{pl.id}|{p[0]},{p[1]}" in self.abertos:
-                        t = "bau_aberto"
+                    if t == "bau_tesouro" and f"{pl.id}|{p[0]},{p[1]}" in self.abertos:
+                        t = "bau_tesouro_aberto"
                     ch.objetos[p] = Objeto(t, p[0], p[1], v)
         return ch
 
@@ -193,8 +193,8 @@ class MundoMasmorra(Mundo):
 
 
 class EcossistemaMasmorra(Ecossistema):
-    def ao_carregar_chunk(self, ch):
+    def ao_carregar_chunk(self, *args, **kwargs):
         pass
 
-    def tentar_spawn(self, noite):
+    def tentar_spawn(self, *args, **kwargs):
         pass

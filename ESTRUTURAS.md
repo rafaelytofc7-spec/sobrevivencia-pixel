@@ -30,3 +30,10 @@ e se você está numa masmorra.
 - `dados_estruturas.py` - itens/objetos/criaturas/receitas novos (acrescentados em dados.py)
 - `arte_estruturas.py` - pixel art nova (acrescentada no objeto Sprites)
 - `sistema_estruturas.py` - liga tudo ao jogo (ganchos marcados `# [ESTRUTURAS]` em main.py, mundo.py e salvar.py)
+
+## Compatibilidade com a v0.4 (visual/controles/estações)
+- Objetos com nome próprio para não colidir: `bau_tesouro`/`bau_tesouro_aberto`
+  (o `bau` de guardar itens continua sendo o do dados.py), `plantacao_trigo`/`plantacao_abobora`.
+- `tocha`, `cama`, `trigo`, `pao`: se já existirem em dados.py/sprites.py, valem os de lá
+  (este ramo só cria se faltar). Se `Mundo.lista_luzes()` existir, as tochas da superfície
+  são iluminadas pelo main.py; na masmorra o sistema usa `lista_luzes()` para redesenhar as luzes.

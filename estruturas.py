@@ -97,7 +97,7 @@ class Estrutura:
         self.area.add((x, y))
 
     def bau(self, x, y, nivel, ouro=False):
-        self.obj(x, y, "bau", 1 if ouro else 0)
+        self.obj(x, y, "bau_tesouro", 1 if ouro else 0)
         self.baus[(x, y)] = nivel
 
     def npc(self, tipo, x, y, raio=5, **extra):
@@ -248,7 +248,7 @@ def vila(est, ox, oy, rng, mat, aldeoes=True, nivel_bau=1, comerciantes=False):
                     else:
                         est.chao(xx, yy, "terra_arada")
                         if (yy - fy) % 2 == 1:
-                            est.obj(xx, yy, "plantacao", var)
+                            est.obj(xx, yy, ("plantacao_trigo", "plantacao_abobora")[var])
             if aldeoes and rng.random() < 0.6:
                 est.npc("aldeao", fx + w // 2, fy + h + (0 if gy == 0 else -h - 1), raio=5,
                         comerciante=comerciantes)
@@ -552,8 +552,8 @@ class PlanoEstruturas:
                         ch.pisos[p] = classe_objeto(t, tx, ty, v)
                     if p in est.objetos:
                         t, v = est.objetos[p]
-                        if t == "bau" and self.id_bau(tx, ty) in self.abertos:
-                            t = "bau_aberto"
+                        if t == "bau_tesouro" and self.id_bau(tx, ty) in self.abertos:
+                            t = "bau_tesouro_aberto"
                         ch.objetos[p] = classe_objeto(t, tx, ty, v)
         ch.recalcular_chao(0.0)
         ch.estruturas = [e.id for e in lista]
