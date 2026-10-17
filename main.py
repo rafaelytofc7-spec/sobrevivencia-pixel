@@ -22,6 +22,7 @@ from ecossistema import Ecossistema
 from interface import Interface
 from ruido import semente_de_texto
 from salvar import salvar_jogo, carregar_jogo, existe_save
+from sistema_estruturas import SistemaEstruturas      # [ESTRUTURAS]
 
 CH = TAMANHO_CHUNK
 PX_CHUNK = CH * TILE         # 256 pixels por chunk
@@ -68,6 +69,7 @@ class Jogo:
         self.criaturas = []
         self.ecossistema = Ecossistema(self)
         self.mundo.ao_carregar = self.ecossistema.ao_carregar_chunk
+        self.estruturas = SistemaEstruturas(self)            # [ESTRUTURAS]
         self.clima = Clima(semente)
         self.popups = []
         self.particulas = []
@@ -109,6 +111,7 @@ class Jogo:
         self.tempo = dados.get("tempo", 0.0)
         self.dia = dados.get("dia", 1)
         self.derrotados = dados.get("derrotados", 0)
+        self.estruturas.carregar_dict(dados.get("estruturas", {}))   # [ESTRUTURAS]
         self.mundo.atualizar_chunks(self.jogador.x, self.jogador.y, limite=99)
         self.estado = "jogando"
         self.centralizar_camera()
@@ -136,6 +139,8 @@ class Jogo:
         return self.tempo / DURACAO_DIA * 24.0
 
     def nivel_escuridao(self):
+        if self.estruturas.escuridao() is not None:         # [ESTRUTURAS] masmorra
+            return self.estruturas.escuridao()
         luz = 0.5 - 0.5 * math.cos(2 * math.pi * self.hora() / 24.0)
         return max(0.0, min(1.0, (0.55 - luz) / 0.55)) * ESCURIDAO_MAXIMA
 
@@ -185,6 +190,8 @@ class Jogo:
     # Eventos
     # ===========================================================
     def tratar_evento(self, ev):
+        if self.estruturas.tratar_evento(ev):               # [ESTRUTURAS] janela de trocas
+            return
         if ev.type == pygame.MOUSEMOTION:
             self.pos_mouse = ev.pos
             return
@@ -433,6 +440,8 @@ class Jogo:
         poder = j.inventario.poder_ferramenta(ferramenta) if ferramenta else 1
         obj.tremor = 0.2
         j.tempo_golpe = 0.15
+        if self.estruturas.golpear(obj):                    # [ESTRUTURAS] baú, escada...
+            return
         if poder < info.get("poder_min", 0):
             self.avisar("Precisa de uma picareta de pedra (ou melhor)", 1.5)
             return
@@ -546,6 +555,8 @@ class Jogo:
 
     def clique_direito(self):
         """Botão direito: construir, consumir, pescar ou usar a fogueira."""
+        if self.estruturas.clique_direito():                # [ESTRUTURAS] NPC, baú, escada
+            return
         inv = self.jogador.inventario
         item = inv.item_selecionado()
         tx, ty = self.bloco_mouse()
@@ -679,6 +690,8 @@ class Jogo:
         if j.espera_coleta > 0:
             return
         j.espera_coleta = TEMPO_ENTRE_GOLPES
+        if self.estruturas.interagir():                     # [ESTRUTURAS] NPC, baú, escada
+            return
         cx, cy = j.centro
         inv = j.inventario
         fogueira = self.mundo.objeto_mais_proximo(cx, cy, 36, tipos=("fogueira",))
@@ -703,6 +716,9 @@ class Jogo:
             return ""
         if self.pesca:
             return "Clique para fisgar!" if self.pesca["mordendo"] > 0 else "Esperando o peixe morder..."
+        dica = self.estruturas.dica()                       # [ESTRUTURAS]
+        if dica:
+            return dica
         c = self.criatura_no_mouse()
         if c:
             return f"[Clique] Atacar {c.info['nome']}"
@@ -822,6 +838,7 @@ class Jogo:
             c.atualizar(dt, self)
         self.ecossistema.atualizar(dt)
         self.atualizar_chuva(dt)
+        self.estruturas.atualizar(dt)                       # [ESTRUTURAS]
         self.centralizar_camera()
         if j.vida <= 0:
             self.estado = "morto"
@@ -913,8 +930,8 @@ class Jogo:
                         pygame.draw.line(sup, espuma, (px, py), (px, py + 15))
                     if vizinho(1, 0) not in CHAO_AGUA:
                         pygame.draw.line(sup, espuma, (px + 15, py), (px + 15, py + 15))
-        for (tx, ty) in ch.pisos:
-            sup.blit(self.sprites.piso, ((tx - x0) * TILE, (ty - y0) * TILE))
+        for (tx, ty), p in ch.pisos.items():                # [ESTRUTURAS] pisos variados
+            sup.blit(self.sprites.sprite_objeto(p), ((tx - x0) * TILE, (ty - y0) * TILE))
         ch.sujo = False
 
     def desenhar(self):
@@ -1006,6 +1023,7 @@ class Jogo:
             ui.desenhar_ajuda(self.tela)
         elif self.estado == "morto":
             ui.desenhar_morte(self.tela, self, self.pos_mouse)
+        self.estruturas.desenhar_interface(self.tela)       # [ESTRUTURAS] trocas, chefe
         ui.desenhar_cursor(self.tela, self.pos_mouse, self.arrastando)
 
     def desenhar_objeto(self, cena, obj, cx, cy):
@@ -1117,6 +1135,7 @@ class Jogo:
             if -100 < fx < LARGURA_INTERNA + 100 and -100 < fy < ALTURA_INTERNA + 100:
                 raio = RAIO_LUZ_FOGUEIRA + (2 if int(self.tempo_total * 6) % 2 else 0)
                 m.blit(gradiente_luz(raio), (fx - raio, fy - raio), special_flags=pygame.BLEND_RGB_ADD)
+        self.estruturas.desenhar_luzes(m, cx, cy)           # [ESTRUTURAS] tochas / masmorra
         cena.blit(m, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
 
 

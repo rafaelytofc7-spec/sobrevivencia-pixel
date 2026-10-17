@@ -24,6 +24,7 @@ def salvar_jogo(jogo, caminho=ARQUIVO_SAVE):
         "clima": jogo.clima.para_dict(),
         "jogador": jogo.jogador.para_dict(),
         "chunks": jogo.mundo.dados_save(),
+        "estruturas": jogo.estruturas.para_dict(),   # [ESTRUTURAS] baús abertos, chefes, masmorra
     }
     temporario = caminho + ".tmp"
     with open(temporario, "w", encoding="utf-8") as f:

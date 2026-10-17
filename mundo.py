@@ -18,6 +18,8 @@ from config import (TILE, TAMANHO_CHUNK, RAIO_CARREGAR, RAIO_DESCARREGAR,
                     TEMPO_REGENERAR_DANO, COMBUSTIVEL_INICIAL)
 from dados import OBJETOS, BIOMAS
 from ruido import fractal, ruido, numero_chunk
+from estruturas import PlanoEstruturas          # [ESTRUTURAS]
+from dados_estruturas import e_piso             # [ESTRUTURAS]
 
 CH = TAMANHO_CHUNK
 
@@ -124,6 +126,7 @@ class Objeto:
 class Gerador:
     def __init__(self, semente):
         self.semente = semente
+        self.estruturas = PlanoEstruturas(semente, self)   # [ESTRUTURAS] vilas, castelos...
 
     def bioma(self, x, y):
         s = self.semente
@@ -203,6 +206,7 @@ class Gerador:
                     if sorteio < acumulado:
                         ch.objetos[(x, y)] = Objeto(tipo, x, y, variante)
                         break
+        self.estruturas.carimbar(ch, Objeto)               # [ESTRUTURAS] carimba vilas, castelos...
         return ch
 
 
@@ -358,7 +362,7 @@ class Mundo:
         ch = self.chunk(obj.tx, obj.ty)
         if ch is None:
             return False
-        if obj.tipo == "piso":
+        if e_piso(obj.tipo):                               # [ESTRUTURAS] (era: == "piso")
             ch.pisos[(obj.tx, obj.ty)] = obj
             ch.sujo = True
         else:
@@ -371,7 +375,7 @@ class Mundo:
         ch = self.chunk(obj.tx, obj.ty)
         if ch is None:
             return
-        if obj.tipo == "piso":
+        if e_piso(obj.tipo):                               # [ESTRUTURAS] (era: == "piso")
             ch.pisos.pop((obj.tx, obj.ty), None)
             ch.sujo = True
         else:
