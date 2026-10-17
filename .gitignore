@@ -3,3 +3,12 @@ __pycache__/
 save.json
 save.json.tmp
 controles.json
+build/
+dist/
+dist_pacote/
+*.spec
+_atualizacao/
+atualizador.log
+atualizador.json
+backup-*/
+save*.json

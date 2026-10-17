@@ -1670,6 +1670,11 @@ class Jogo:
 def main():
     pygame.init()
     pygame.display.set_caption(TITULO)
+    try:
+        from icone import imagem16
+        pygame.display.set_icon(pygame.transform.scale(imagem16(), (32, 32)))
+    except Exception:
+        pass
     tela = pygame.display.set_mode((LARGURA_TELA, ALTURA_TELA))
     pygame.mouse.set_visible(False)
     relogio = pygame.time.Clock()

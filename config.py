@@ -4,6 +4,7 @@ config.py - Constantes e números de ajuste do jogo.
 Itens, receitas, biomas e criaturas ficam em dados.py.
 """
 import os
+import sys
 
 # ---------------------------------------------------------------
 # Tela e pixel art
@@ -15,7 +16,9 @@ ALTURA_INTERNA = 200
 LARGURA_TELA = LARGURA_INTERNA * ESCALA   # 960
 ALTURA_TELA = ALTURA_INTERNA * ESCALA     # 600
 FPS = 60
-TITULO = "Sobrevivência Pixel - v0.4"
+from versao import VERSAO
+VERSAO_CURTA = VERSAO[:-2] if VERSAO.count(".") == 2 and VERSAO.endswith(".0") else VERSAO   # 0.4.0 -> 0.4
+TITULO = "Sobrevivência Pixel - v" + VERSAO_CURTA
 
 # ---------------------------------------------------------------
 # Mundo infinito em chunks
@@ -134,8 +137,27 @@ TAMANHO_INVENTARIO = 36       # 9 da barra + 27 da mochila
 # Arquivo de salvamento
 # ---------------------------------------------------------------
 PASTA_JOGO = os.path.dirname(os.path.abspath(__file__))
-ARQUIVO_SAVE = os.path.join(PASTA_JOGO, "save.json")
-ARQUIVO_CONTROLES = os.path.join(PASTA_JOGO, "controles.json")
+
+
+def _pasta_dados():
+    """Onde ficam save.json e controles.json.
+    - Rodando pelo código (python main.py): na pasta do jogo, como antes.
+    - Rodando pelo .exe (PyInstaller): em %APPDATA%\\SobrevivenciaPixel, assim as
+      atualizações trocam os arquivos do jogo sem apagar o save."""
+    if getattr(sys, "frozen", False):
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        pasta = os.path.join(base, "SobrevivenciaPixel")
+        try:
+            os.makedirs(pasta, exist_ok=True)
+            return pasta
+        except OSError:
+            return os.path.dirname(sys.executable)
+    return PASTA_JOGO
+
+
+PASTA_DADOS = _pasta_dados()
+ARQUIVO_SAVE = os.path.join(PASTA_DADOS, "save.json")
+ARQUIVO_CONTROLES = os.path.join(PASTA_DADOS, "controles.json")
 
 # ---------------------------------------------------------------
 # Cores da interface
