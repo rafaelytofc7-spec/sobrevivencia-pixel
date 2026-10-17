@@ -29,6 +29,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -105,9 +106,14 @@ def trabalhar(fila):
     try:
         with pedir(url_api()) as r:
             dados = json.loads(r.read().decode("utf-8"))
-    except Exception as e:               # sem internet, GitHub fora, limite da API...
+    except urllib.error.HTTPError as e:   # 404 = nenhuma versão publicada; 403 = limite da API
+        log(f"GitHub respondeu {e.code} ao verificar atualização")
+        msg = "Nenhuma versão publicada no GitHub ainda." if e.code == 404 else "O GitHub não respondeu agora."
+        fila.put(("jogar", msg + " Abrindo o jogo..."))
+        return
+    except Exception as e:               # sem internet, GitHub fora...
         log(f"sem verificar atualização: {e!r}")
-        fila.put(("jogar", "Sem conexão com o GitHub. Abrindo o jogo..."))
+        fila.put(("jogar", "Sem conexão com a internet. Abrindo o jogo..."))
         return
     remota = dados.get("tag_name", "")
     if versao_tupla(remota) <= versao_tupla(local):
