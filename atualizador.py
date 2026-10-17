@@ -217,8 +217,24 @@ def trocar_depois(nome):
     """Troca o Atualizar.exe depois que este processo fechar."""
     if os.name != "nt":
         return
-    cmd = (f'ping -n 4 127.0.0.1 >nul & move /y "{nome}.novo" "{nome}" >nul')
-    subprocess.Popen(["cmd", "/c", cmd], cwd=PASTA, creationflags=0x08000000)   # sem janela
+    # tenta por até ~60 s (espera este processo e o "pai" do PyInstaller fecharem).
+    # Vai como texto (não lista) para o Python não escapar as aspas do jeito errado para o cmd.
+    laco = (f'for /l %i in (1,1,30) do (ping -n 3 127.0.0.1 >nul & '
+            f'move /y "{nome}.novo" "{nome}" >nul 2>&1 && exit /b 0)')
+    try:
+        subprocess.Popen(f'cmd /d /c "{laco}"', cwd=PASTA, creationflags=0x08000000)   # sem janela
+    except OSError as e:
+        log(f"não deu para agendar a troca do {nome}: {e!r}")
+
+
+def troca_pendente():
+    """Se uma atualização anterior deixou Atualizar.exe.novo, agenda a troca de novo."""
+    if not getattr(sys, "frozen", False):
+        return
+    nome = os.path.basename(sys.executable)
+    if os.path.isfile(os.path.join(PASTA, nome + ".novo")):
+        log("troca pendente do atualizador agendada")
+        trocar_depois(nome)
 
 
 def abrir_jogo():
@@ -236,6 +252,7 @@ def abrir_jogo():
 # janela
 # ----------------------------------------------------------------------
 def main():
+    troca_pendente()
     import tkinter as tk
     from tkinter import ttk
 
