@@ -16,8 +16,9 @@ from config import (TILE, TAMANHO_CHUNK, RAIO_CARREGAR, RAIO_DESCARREGAR,
                     AGUA_FUNDA, AGUA_RASA, LAMA, AREIA, CHAO_AGUA, CHAO_DO_BIOMA,
                     NIVEL_AGUA_BASE, PROFUNDIDADE_FUNDA, TEMPO_FRUTAS_VOLTAR,
                     TEMPO_REGENERAR_DANO, COMBUSTIVEL_INICIAL, TAMANHO_BAU,
-                    RAIO_LUZ_FOGUEIRA, RAIO_LUZ_TOCHA)
+                    RAIO_LUZ_FOGUEIRA, RAIO_LUZ_TOCHA, LAVA)
 from dados import OBJETOS, BIOMAS
+import blocos                                   # noqa: F401  [v0.5] blocos, minérios, receitas
 from ruido import fractal, ruido, numero_chunk
 from estruturas import PlanoEstruturas          # [ESTRUTURAS]
 from dados_estruturas import e_piso             # [ESTRUTURAS]
@@ -42,7 +43,10 @@ class Objeto:
         self.combustivel = COMBUSTIVEL_INICIAL if tipo == "fogueira" else 0.0
         self.tremor = 0.0
         self.crescimento = 0.0             # plantação: segundos crescendo
-        self.conteudo = [None] * TAMANHO_BAU if tipo == "bau" else None
+        self.conteudo = [None] * TAMANHO_BAU if tipo == "bau" else ([None] * 3 if tipo == "forno" else None)
+        self.queima = 0.0                  # forno: segundos de fogo que ainda restam
+        self.queima_max = 1.0
+        self.progresso = 0.0               # forno: segundos derretendo o item atual
 
     @property
     def info(self):
@@ -91,9 +95,13 @@ class Objeto:
         extra = OBJETOS[self.tipo].get("altura", 0)
         return pygame.Rect(self.tx * TILE, self.ty * TILE - extra, TILE, TILE + extra)
 
+    @property
+    def bloco(self):
+        return OBJETOS[self.tipo].get("bloco", False)
+
     def retangulo_colisao(self):
         x, y = self.tx * TILE, self.ty * TILE
-        if self.tipo in ("parede_madeira", "parede_pedra"):
+        if self.tipo in ("parede_madeira", "parede_pedra") or OBJETOS[self.tipo].get("bloco"):
             return pygame.Rect(x, y, TILE, TILE)
         if self.tipo in ("arvore", "arvore_pantano", "pinheiro", "cacto"):
             return pygame.Rect(x + 4, y + 6, 8, 9)
@@ -119,6 +127,10 @@ class Objeto:
                 self.tempo_frutas = 0.0
         elif self.tipo == "fogueira" and self.combustivel > 0:
             self.combustivel = max(0.0, self.combustivel - dt)
+        elif self.tipo == "forno":
+            from criacao import atualizar_forno
+            return atualizar_forno(self, dt)
+        return False
 
     def para_dict(self):
         d = {"t": self.tipo, "x": self.tx, "y": self.ty, "v": self.variante}
@@ -131,6 +143,10 @@ class Objeto:
             d["g"] = round(self.crescimento, 1)
         if self.conteudo is not None:
             d["i"] = [list(e) if e else None for e in self.conteudo]
+        if self.tipo == "forno":
+            d["fq"] = round(self.queima, 1)
+            d["fm"] = round(self.queima_max, 1)
+            d["fp"] = round(self.progresso, 1)
         return d
 
     @staticmethod
@@ -142,8 +158,12 @@ class Objeto:
             o.combustivel = d["c"]
         o.crescimento = d.get("g", 0.0)
         if o.conteudo is not None and isinstance(d.get("i"), list):
-            itens = [list(e) if e else None for e in d["i"]][:TAMANHO_BAU]
-            o.conteudo = itens + [None] * (TAMANHO_BAU - len(itens))
+            n = len(o.conteudo)
+            itens = [list(e) if e else None for e in d["i"]][:n]
+            o.conteudo = itens + [None] * (n - len(itens))
+        o.queima = d.get("fq", 0.0)
+        o.queima_max = d.get("fm", 1.0) or 1.0
+        o.progresso = d.get("fp", 0.0)
         return o
 
 
@@ -254,6 +274,7 @@ class Chunk:
         self.modificado = False      # True = precisa ir para o save
         self.superficie = None       # imagem do chão já desenhada (cache)
         self.sujo = True             # True = redesenhar a imagem do chão
+        self.chao_mod = {}           # [v0.5] índice -> tipo de chão mudado pelo jogador (vai no save)
 
     def recalcular_chao(self, deslocamento):
         """Reclassifica água/lama/terra para um novo nível. Retorna True se mudou algo."""
@@ -264,14 +285,26 @@ class Chunk:
             if novo != self.chao[k]:
                 self.chao[k] = novo
                 mudou = True
+        for k, t in self.chao_mod.items():          # [v0.5] o que o jogador mudou continua
+            self.chao[k] = t
         if mudou:
             self.sujo = True
         return mudou
 
     def para_dict(self, itens):
-        return {"objetos": [o.para_dict() for o in self.objetos.values()],
-                "pisos": [o.para_dict() for o in self.pisos.values()],
-                "itens": [it.para_dict() for it in itens]}
+        d = {"objetos": [o.para_dict() for o in self.objetos.values()],
+             "pisos": [o.para_dict() for o in self.pisos.values()],
+             "itens": [it.para_dict() for it in itens]}
+        if self.chao_mod:
+            d["chao"] = [[k, t] for k, t in self.chao_mod.items()]
+        return d
+
+    def mudar_chao(self, k, tipo):
+        """[v0.5] Troca o chão de um bloco (fica salvo)."""
+        self.chao_mod[k] = tipo
+        self.chao[k] = tipo
+        self.modificado = True
+        self.sujo = True
 
 
 def chunk_do_bloco(tx, ty):
@@ -296,6 +329,9 @@ class Mundo:
         self.fogueiras = []         # fogueiras dos chunks carregados
         self.luzes = []             # fogueiras, tochas e fornos dos chunks carregados
         self._fogueiras_sujas = True
+        self._especiais = []        # [v0.5] objetos que mudam sozinhos (arbusto, fogueira, plantação, forno)
+        self._especiais_sujos = True
+        self.golpeados = set()      # [v0.5] objetos com dano/tremor (voltam ao normal sozinhos)
         self.ao_carregar = None     # função chamada quando um chunk novo é carregado
         self.fator_crescimento = 1.0  # estação: quão rápido frutas/plantações crescem
 
@@ -318,9 +354,12 @@ class Mundo:
                 o = Objeto.de_dict(od)
                 ch.pisos[(o.tx, o.ty)] = o
             self.itens.extend(ItemChao.de_dict(i) for i in d.get("itens", []))
+            for k, t in d.get("chao", []):
+                ch.chao_mod[int(k)] = t
+                ch.chao[int(k)] = t
             ch.modificado = True
         self.chunks[(cx, cy)] = ch
-        self._fogueiras_sujas = True
+        self._sujar()
         if self.ao_carregar:
             self.ao_carregar(ch)
         return ch
@@ -333,7 +372,7 @@ class Mundo:
             self.itens = [it for it in self.itens if id(it) not in ids]
         if ch.modificado or meus_itens:
             self.salvos[chave(cx, cy)] = ch.para_dict(meus_itens)
-        self._fogueiras_sujas = True
+        self._sujar()
 
     def atualizar_chunks(self, px, py, limite=2, raio=RAIO_CARREGAR):
         """Carrega chunks perto de (px, py) (mais próximos primeiro) e descarrega os longe."""
@@ -397,7 +436,7 @@ class Mundo:
         else:
             ch.objetos[(obj.tx, obj.ty)] = obj
         ch.modificado = True
-        self._fogueiras_sujas = True
+        self._sujar()
         return True
 
     def remover(self, obj):
@@ -410,7 +449,7 @@ class Mundo:
         else:
             ch.objetos.pop((obj.tx, obj.ty), None)
         ch.modificado = True
-        self._fogueiras_sujas = True
+        self._sujar()
 
     def marcar_modificado(self, obj):
         ch = self.chunk(obj.tx, obj.ty)
@@ -423,7 +462,7 @@ class Mundo:
         x1, y1 = int((ret.right - 1) // TILE), int((ret.bottom - 1) // TILE)
         for ty in range(y0, y1 + 1):
             for tx in range(x0, x1 + 1):
-                if agua and self.tipo_chao(tx, ty) == AGUA_FUNDA:
+                if agua and self.tipo_chao(tx, ty) in (AGUA_FUNDA, LAVA):
                     return True
                 obj = self.objeto(tx, ty)
                 if obj and obj.solido and ret.colliderect(obj.retangulo_colisao()):
@@ -466,6 +505,9 @@ class Mundo:
     def objeto_no_ponto(self, wx, wy):
         """Objeto embaixo do mouse (a copa da árvore conta para o bloco de baixo)."""
         tx, ty = int(wx // TILE), int(wy // TILE)
+        aqui = self.objeto(tx, ty)
+        if aqui is not None and aqui.bloco:              # [v0.5] blocos: o de cima tem prioridade
+            return aqui
         abaixo = self.objeto(tx, ty + 1)
         if abaixo and abaixo.retangulo_desenho().collidepoint(wx, wy):
             return abaixo
@@ -490,7 +532,7 @@ class Mundo:
     def lista_fogueiras(self):
         if self._fogueiras_sujas:
             self.luzes = [o for ch in self.chunks.values() for o in ch.objetos.values()
-                          if o.tipo in ("fogueira", "tocha", "forno")]
+                          if o.tipo in ("fogueira", "tocha", "forno", "lampada")]
             self.fogueiras = [o for o in self.luzes if o.tipo == "fogueira"]
             self._fogueiras_sujas = False
         return [f for f in self.fogueiras if f.acesa]
@@ -498,17 +540,35 @@ class Mundo:
     def lista_luzes(self):
         """[(objeto, raio)] de tudo que ilumina: fogueiras acesas, tochas e fornos."""
         self.lista_fogueiras()
-        return [(o, RAIO_LUZ_FOGUEIRA if o.tipo == "fogueira" else RAIO_LUZ_TOCHA if o.tipo == "tocha" else 34)
-                for o in self.luzes if o.tipo != "fogueira" or o.acesa]
+        raios = {"fogueira": RAIO_LUZ_FOGUEIRA, "tocha": RAIO_LUZ_TOCHA, "lampada": blocos.RAIO_LUZ_LAMPADA}
+        return [(o, raios.get(o.tipo, 34)) for o in self.luzes
+                if (o.tipo != "fogueira" or o.acesa) and (o.tipo != "forno" or o.queima > 0)]
+
+    def _sujar(self):
+        self._fogueiras_sujas = True
+        self._especiais_sujos = True
+
+    def golpeado(self, obj):
+        """[v0.5] Avisa que um objeto levou golpe (para tremer e se recuperar)."""
+        self.golpeados.add(obj)
 
     def atualizar(self, dt):
-        for ch in self.chunks.values():
-            for obj in ch.objetos.values():
-                if obj.tremor > 0 or obj.vida < obj.vida_max or obj.tipo in ("arbusto", "fogueira", "plantacao"):
-                    obj.atualizar(dt, self.fator_crescimento)
-            for obj in ch.pisos.values():
-                if obj.vida < obj.vida_max:
-                    obj.atualizar(dt)
+        # [v0.5] só olha os objetos que mudam sozinhos (antes passava por todos: lento nas cavernas)
+        if self._especiais_sujos:
+            self._especiais = [(ch, o) for ch in self.chunks.values() for o in ch.objetos.values()
+                               if o.tipo in ("arbusto", "fogueira", "plantacao", "forno")]
+            self._especiais_sujos = False
+        for ch, obj in self._especiais:
+            if obj.tipo == "forno":
+                if (obj.queima > 0 or obj.progresso > 0 or obj.conteudo[0]) and obj.atualizar(dt):
+                    ch.modificado = True
+            else:
+                obj.atualizar(dt, self.fator_crescimento)
+        for obj in list(self.golpeados):
+            if obj.tipo not in ("arbusto", "fogueira", "plantacao", "forno"):
+                obj.atualizar(dt, self.fator_crescimento)
+            if obj.tremor <= 0 and obj.vida >= obj.vida_max:
+                self.golpeados.discard(obj)
 
     # ----------------------- início e save -----------------------
     def ponto_inicial(self):

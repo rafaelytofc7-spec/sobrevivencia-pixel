@@ -37,9 +37,11 @@ class Inventario:
         return e[0] if e else None
 
     # ----- mudar -----
-    def adicionar(self, item, qtd=1):
-        """Adiciona itens (barra primeiro). Retorna quanto NÃO coube."""
+    def adicionar(self, item, qtd=1, usos=None):
+        """Adiciona itens (barra primeiro). Retorna quanto NÃO coube.
+        usos: durabilidade que sobra (ferramentas); None = nova."""
         pilha = ITENS[item]["pilha"]
+        maximo = ITENS[item].get("durabilidade")
         for e in self.espacos:
             if e and e[0] == item and e[1] < pilha:
                 cabe = min(qtd, pilha - e[1])
@@ -50,7 +52,7 @@ class Inventario:
         for i, e in enumerate(self.espacos):
             if e is None:
                 cabe = min(qtd, pilha)
-                self.espacos[i] = [item, cabe]
+                self.espacos[i] = [item, cabe] if not maximo else [item, cabe, usos if usos is not None else maximo]
                 qtd -= cabe
                 if qtd == 0:
                     return 0
@@ -238,6 +240,10 @@ class Jogador:
         self.dir_rolar = (0.0, 1.0)
         self.na_agua = False          # água rasa ou funda
         self.nadando = False          # água funda
+        self.saturacao = 5.0          # [v0.5] fome "escondida": gasta antes da barra de fome
+        self.exaustao = 0.0           # [v0.5] cansaço acumulado (correr, minerar, lutar...)
+        self.xp = 0                   # [v0.5] pontos de experiência
+        self.tempo_regen = 0.0
         self.ultimo_input = (0.0, 1.0)
 
     def retangulo(self):
@@ -390,6 +396,7 @@ class Jogador:
     def para_dict(self):
         return {"x": self.x, "y": self.y, "direcao": self.direcao, "vida": self.vida,
                 "fome": self.fome, "sede": self.sede, "energia": self.energia, "ar": self.ar,
+                "saturacao": round(self.saturacao, 2), "exaustao": round(self.exaustao, 2), "xp": self.xp,
                 "inventario": self.inventario.para_dict()}
 
     def carregar_dict(self, d):
@@ -400,6 +407,9 @@ class Jogador:
         self.sede = d.get("sede", SEDE_MAX)
         self.energia = d.get("energia", ENERGIA_MAX)
         self.ar = d.get("ar", AR_MAX)
+        self.saturacao = d.get("saturacao", 5.0)
+        self.exaustao = d.get("exaustao", 0.0)
+        self.xp = int(d.get("xp", 0))
         self.inventario.carregar_dict(d.get("inventario", {}))
 
 
@@ -414,6 +424,8 @@ class Flecha:
         self.dano = dano
         self.vida = 0.9
         self.parada = False
+        self.hostil = False           # [v0.5] flecha de esqueleto (acerta você)
+        self.dono = None
 
     @property
     def angulo(self):
@@ -444,6 +456,7 @@ class ItemChao:
         self.y = y
         self.z = 0.0
         self.idade = 0.0
+        self.usos = None              # [v0.5] durabilidade de ferramenta jogada no chão
         if pular:
             ang = random.uniform(0, math.tau)
             vel = random.uniform(18, 40)
@@ -489,13 +502,17 @@ class ItemChao:
         return math.hypot(jogador.x - self.x, (jogador.y - 4) - self.y)
 
     def para_dict(self):
-        return {"i": self.item, "q": self.quantidade, "x": round(self.x, 1),
-                "y": round(self.y, 1), "a": round(self.idade, 1)}
+        d = {"i": self.item, "q": self.quantidade, "x": round(self.x, 1),
+             "y": round(self.y, 1), "a": round(self.idade, 1)}
+        if self.usos is not None:
+            d["u"] = self.usos
+        return d
 
     @staticmethod
     def de_dict(d):
         it = ItemChao(d["i"], d["x"], d["y"], d.get("q", 1), pular=False)
         it.idade = d.get("a", 1.0)
+        it.usos = d.get("u")
         return it
 
 

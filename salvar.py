@@ -11,8 +11,8 @@ import os
 
 from config import ARQUIVO_SAVE
 
-VERSAO_SAVE = 4   # v0.4: estações, baús, cama, minimapa (lê saves da v0.3)
-VERSOES_ACEITAS = (3, 4)
+VERSAO_SAVE = 5   # v0.5: blocos, camadas (cavernas), forno com espaços, durabilidade
+VERSOES_ACEITAS = (5,)
 
 
 def salvar_jogo(jogo, caminho=ARQUIVO_SAVE):
@@ -45,7 +45,8 @@ def carregar_jogo(caminho=ARQUIVO_SAVE):
     except (OSError, ValueError):
         return None, "O arquivo de save está estragado"
     if dados.get("versao") not in VERSOES_ACEITAS:
-        return None, "Save de versão antiga (o mundo mudou na v0.3)"
+        return None, ("Save de versão antiga (v0.4 ou antes): o mundo virou blocos na v0.5. "
+                      "Comece um mundo novo")
     return dados, ""
 
 

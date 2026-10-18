@@ -69,3 +69,50 @@ def semente_de_texto(texto):
 def numero_chunk(semente, cx, cy):
     """Número fixo para cada chunk (usado para sortear árvores, animais...)."""
     return (semente * 73856093 ^ cx * 19349663 ^ cy * 83492791) & 0x7FFFFFFF
+
+
+# ---------------------------------------------------------------
+# Ruído 3D (v0.5): usado nas cavernas. O "z" é a camada (profundidade),
+# então as cavernas de camadas vizinhas se parecem (túneis que continuam).
+# ---------------------------------------------------------------
+def _hash3(ix, iy, iz, semente):
+    v = (ix * 374761393 + iy * 668265263 + iz * 1440670441 + semente * 982451653) & 0xFFFFFFFF
+    v = ((v ^ (v >> 13)) * 1274126177) & 0xFFFFFFFF
+    v ^= v >> 16
+    return (v & 0xFFFF) / 65535.0
+
+
+def ruido3(x, y, z, semente):
+    """Value noise 3D: interpola os 8 cantos do cubo."""
+    ix, iy, iz = math.floor(x), math.floor(y), math.floor(z)
+    fx, fy, fz = x - ix, y - iy, z - iz
+    fx = fx * fx * (3 - 2 * fx)
+    fy = fy * fy * (3 - 2 * fy)
+    fz = fz * fz * (3 - 2 * fz)
+    h = _hash3
+    a = h(ix, iy, iz, semente)
+    b = h(ix + 1, iy, iz, semente)
+    c = h(ix, iy + 1, iz, semente)
+    d = h(ix + 1, iy + 1, iz, semente)
+    e = h(ix, iy, iz + 1, semente)
+    f = h(ix + 1, iy, iz + 1, semente)
+    g = h(ix, iy + 1, iz + 1, semente)
+    k = h(ix + 1, iy + 1, iz + 1, semente)
+    ab = a + (b - a) * fx
+    cd = c + (d - c) * fx
+    ef = e + (f - e) * fx
+    gk = g + (k - g) * fx
+    baixo = ab + (cd - ab) * fy
+    cima = ef + (gk - ef) * fy
+    return baixo + (cima - baixo) * fz
+
+
+def fractal3(x, y, z, semente, oitavas=2):
+    total = soma = 0.0
+    amp = freq = 1.0
+    for i in range(oitavas):
+        total += ruido3(x * freq + i * 17.3, y * freq - i * 9.1, z * freq + i * 5.7, semente + i * 31) * amp
+        soma += amp
+        amp *= 0.5
+        freq *= 2.0
+    return total / soma

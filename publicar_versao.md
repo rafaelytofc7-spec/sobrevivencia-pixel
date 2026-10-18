@@ -31,7 +31,7 @@ Máquina do Rafael: machineId `6776422c-60c0-4e07-9ca1-b3623714e027` (PowerShell
    ```
    Isso muda `versao.py`, faz commit, cria a tag `vX.Y.Z` e gera
    `/workspace/releases/fonte-vX.Y.Z.zip`. (Atualize também o README/ajuda se quiser.)
-   Testes headless: `/workspace/jogo-testes/` (func4.py, soak4.py, m_teste4_func.py...).
+   Testes headless: `/workspace/jogo-testes/` (func5.py, soak5.py, shots5.py, smoke5.py...).
 
 2. **Levar ao PC e compilar** (CopyFromBox + Shell com o machineId):
    - CopyFromBox `/workspace/releases/fonte-vX.Y.Z.zip` →

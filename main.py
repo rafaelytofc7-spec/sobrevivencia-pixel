@@ -14,6 +14,7 @@ import sys
 import pygame
 
 from config import *          # noqa: F401,F403  (constantes)
+import blocos                                          # noqa: F401  [v0.5] registra blocos/receitas
 from dados import ITENS, OBJETOS, RECEITAS, CATEGORIAS, CRIATURAS, NOMES_OBJETOS
 from sprites import Sprites, gradiente_luz
 from mundo import Mundo, Objeto
@@ -29,6 +30,9 @@ from ruido import semente_de_texto
 from salvar import salvar_jogo, carregar_jogo, existe_save
 from sistema_estruturas import SistemaEstruturas      # [ESTRUTURAS]
 from estruturas import NOMES_ESTRUTURAS
+from camadas import SistemaCamadas, nome_camada                 # [v0.5] camadas (Z) e cavernas
+import criacao                                                  # [v0.5] grade de criação e forno
+from blocos import picareta_para, COMBUSTIVEL, FUNDICAO, TIPOS_BLOCO
 
 CH = TAMANHO_CHUNK
 PX_CHUNK = CH * TILE         # 256 pixels por chunk
@@ -43,10 +47,27 @@ COR_LASCAS = {
     "parede_madeira": [(150, 100, 58)], "parede_pedra": [(132, 134, 148)], "piso": [(178, 130, 82)],
     "trigo": [(220, 186, 80), (120, 170, 70)], "plantacao": [(220, 186, 80), (110, 76, 48)],
     "tocha": [(240, 120, 40)], "forno": [(132, 134, 148)], "bau": [(160, 106, 58)], "cama": [(190, 60, 60)],
+    # [v0.5] blocos e chão cavado
+    "bloco_pedra": [(122, 122, 132), (96, 96, 108)], "bloco_pedregulho": [(130, 130, 140)],
+    "bloco_pedra_lisa": [(160, 160, 166)], "bloco_terra": [(134, 94, 60)], "bloco_areia": [(222, 204, 146)],
+    "bloco_tora": [(150, 106, 62)], "bloco_tabuas": [(184, 140, 86)], "bloco_vidro": [(210, 240, 250)],
+    "min_carvao": [(122, 122, 132), (34, 32, 38)], "min_ferro": [(122, 122, 132), (214, 168, 128)],
+    "min_ouro": [(122, 122, 132), (246, 206, 60)], "min_cristal": [(122, 122, 132), (230, 50, 80)],
+    "min_diamante": [(122, 122, 132), (90, 236, 230)], "lampada": [(250, 226, 150)],
+    "escada": [(176, 128, 74)], "chao_terra": [(134, 94, 60), (96, 66, 40)], "chao_areia": [(222, 204, 146)],
+    "chao_pedra": [(122, 122, 132), (90, 88, 96)], "explosao": [(255, 220, 120), (240, 120, 40), (90, 86, 90)],
 }
+PLANOS = ("buraco", "escada")      # [v0.5] desenhados rente ao chão (você fica por cima)
+XP_ORBE = 3                        # pontos por bolinha de XP
 CORES_ESTRUTURAS = {"vila": (240, 200, 90), "cidadela": (200, 200, 220), "castelo": (230, 90, 90),
                     "masmorra": (170, 110, 230), "ruina": (150, 170, 130), "tesouro": (255, 230, 80)}
 CHAO_PLANTAVEL = (GRAMA, GRAMA_FLORESTA, GRAMA_PANTANO, LAMA)
+ESTADOS_SLOTS = ("inventario", "bau", "bancada", "forno")     # telas com espaços de itens
+# [v0.5] fome estilo Minecraft: exaustão por segundo (4 de exaustão = -5 de saturação/fome)
+EXAUSTAO_BASE = 0.16
+EXAUSTAO_ANDAR = 0.08
+EXAUSTAO_CORRER = 0.24
+EXAUSTAO_NADAR = 0.15
 ANIMADOS = ("capim", "junco", "trigo", "plantacao", "arvore", "arvore_pantano", "pinheiro")
 COMIDA_CRUA = {"carne_crua": "carne_assada", "peixe": "peixe_assado"}
 
@@ -66,6 +87,10 @@ class Jogo:
         self.mensagens = []
         self.texto_semente = ""
         self.arrastando = None          # pilha [item, qtd] presa no mouse (inventário)
+        self.grade2 = [None] * 4        # [v0.5] grade 2x2 do inventário
+        self.grade3 = [None] * 9        # [v0.5] grade 3x3 da bancada
+        self.forno_aberto = None
+        self.tremor_tela = 0.0
         self.origem_arrasto = None
         self.categoria = CATEGORIAS[0]
         self.selecao_criacao = None
@@ -92,6 +117,7 @@ class Jogo:
         self.mundo.ao_carregar = self.ecossistema.ao_carregar_chunk
         self.estruturas = SistemaEstruturas(self)            # [ESTRUTURAS]
         self.clima = Clima(semente)
+        self.orbes = []                                      # [v0.5] bolinhas de XP
         self.popups = []
         self.particulas = []
         self.gotas = []
@@ -108,6 +134,10 @@ class Jogo:
         self.mult_caca_lobo = 1.0
         self._temp = (15.0, "Agradável")
         self.marcadores_extra = []       # outros sistemas podem pôr marcadores no mapa aqui
+        self.camadas = SistemaCamadas(self)                  # [v0.5] superfície + cavernas
+        self.forno_aberto = None
+        self.grade2 = [None] * 4
+        self.grade3 = [None] * 9
 
     def novo_jogo(self, semente):
         self._preparar(semente)
@@ -155,10 +185,13 @@ class Jogo:
         r = dados.get("renascer")
         self.ponto_renascer = tuple(r) if r else None
         self.estacao = estacoes.estacao_do_dia(self.dia)
+        self.camadas.carregar_dict(dados.get("camadas", {}))          # [v0.5]
 
     def dados_extras(self):
-        return {"explorados": [f"{cx},{cy}" for cx, cy in self.minimapa.explorados],
-                "renascer": list(self.ponto_renascer) if self.ponto_renascer else None}
+        sup = self.camadas.minimapas.get(0, self.minimapa)
+        return {"explorados": [f"{cx},{cy}" for cx, cy in sup.explorados],
+                "renascer": list(self.ponto_renascer) if self.ponto_renascer else None,
+                "camadas": self.camadas.para_dict()}
 
     def salvar(self):
         try:
@@ -182,6 +215,8 @@ class Jogo:
         return self.tempo / DURACAO_DIA * 24.0
 
     def nivel_escuridao(self):
+        if self.camadas.escuridao() is not None:              # [v0.5] cavernas
+            return self.camadas.escuridao()
         if self.estruturas.escuridao() is not None:         # [ESTRUTURAS] masmorra
             return self.estruturas.escuridao()
         luz = 0.5 - 0.5 * math.cos(2 * math.pi * self.hora() / 24.0)
@@ -251,7 +286,7 @@ class Jogo:
         if ev.type == pygame.MOUSEBUTTONUP:
             self.pos_mouse = ev.pos
             self.arrastando_mapa = None
-            if self.estado in ("inventario", "bau"):
+            if self.estado in ESTADOS_SLOTS:
                 self.soltar_arrasto(ev.pos)
             return
         if ev.type == pygame.MOUSEWHEEL:
@@ -277,7 +312,7 @@ class Jogo:
         if self.estado == "menu_inicial":
             self.tecla_menu(ev)
             return
-        if tecla == pygame.K_F5 and self.estado in ("jogando", "inventario", "criando", "pausa", "bau"):
+        if tecla == pygame.K_F5 and self.estado in ("jogando", "criando", "pausa") + ESTADOS_SLOTS:
             self.salvar()
             return
         if tecla == pygame.K_F9:
@@ -300,7 +335,7 @@ class Jogo:
         elif self.estado == "criando":
             if tecla == pygame.K_ESCAPE or acao == "criar":
                 self.estado = "jogando"
-        elif self.estado in ("inventario", "bau"):
+        elif self.estado in ESTADOS_SLOTS:
             if tecla == pygame.K_ESCAPE or acao in ("inventario", "interagir"):
                 self.fechar_inventario()
         elif self.estado == "jogando":
@@ -351,6 +386,12 @@ class Jogo:
         elif acao == "ajuda":
             self.estado_anterior = "jogando"
             self.estado = "ajuda"
+        elif acao == "espiar":                                # [v0.5] ver a camada de cima
+            if self.camadas.z < 0:
+                self.camadas.espiar = not self.camadas.espiar
+                self.avisar("Vendo a camada de cima" if self.camadas.espiar else "Visão normal", 1.2)
+            else:
+                self.avisar("Só funciona debaixo da terra", 1.2)
 
     def botao_gamepad(self, acao):
         """Botões do controle (gamepad)."""
@@ -390,7 +431,7 @@ class Jogo:
         return (cx + d[0] * 20, cy + d[1] * 20)
 
     def abrir_mapa(self):
-        if self.subterraneo():
+        if self.estruturas.subterraneo:
             self.avisar("O mapa não funciona debaixo da terra", 1.5)
             return
         self.estado = "mapa"
@@ -464,9 +505,9 @@ class Jogo:
                 self.criar(indice)
             elif not self.interface.ret_painel.collidepoint(pos):
                 self.estado = "jogando"
-        elif self.estado in ("inventario", "bau"):
+        elif self.estado in ESTADOS_SLOTS:
             mods = pygame.key.get_mods() if pygame.display.get_init() else 0
-            if self.estado == "bau" and mods & pygame.KMOD_SHIFT:
+            if mods & pygame.KMOD_SHIFT:
                 self.mover_rapido(pos)
             else:
                 self.pegar_arrasto(botao, pos)
@@ -484,10 +525,20 @@ class Jogo:
     # ===========================================================
     # Inventário: arrastar e soltar
     # ===========================================================
-    # refs: ("inv", i), ("equip", slot) ou ("bau", i)
+    # refs: ("inv", i), ("equip", slot), ("bau", i),
+    #       [v0.5] ("grade", i), ("saida", 0) e ("forno", 0 entrada / 1 combustível / 2 saída)
+    def grade_atual(self):
+        return (self.grade3, 3) if self.estado == "bancada" else (self.grade2, 2)
+
     def pegar_ref(self, ref):
         if ref[0] == "bau":
             return self.bau_aberto.conteudo[ref[1]] if self.bau_aberto else None
+        if ref[0] == "grade":
+            return self.grade_atual()[0][ref[1]]
+        if ref[0] == "saida":
+            return criacao.resultado(*self.grade_atual())
+        if ref[0] == "forno":
+            return self.forno_aberto.conteudo[ref[1]] if self.forno_aberto else None
         return self.jogador.inventario.pegar(ref)
 
     def por_ref(self, ref, valor):
@@ -496,16 +547,70 @@ class Jogo:
                 self.bau_aberto.conteudo[ref[1]] = valor
                 self.mundo.marcar_modificado(self.bau_aberto)
             return
+        if ref[0] == "grade":
+            self.grade_atual()[0][ref[1]] = valor
+            return
+        if ref[0] == "saida":
+            return
+        if ref[0] == "forno":
+            if self.forno_aberto:
+                self.forno_aberto.conteudo[ref[1]] = valor
+                self.mundo.marcar_modificado(self.forno_aberto)
+                self.mundo._sujar()
+            return
         self.jogador.inventario.por(ref, valor)
 
     def cabe_ref(self, ref, pilha):
-        if ref[0] == "bau":
+        if ref[0] in ("bau", "grade"):
             return True
+        if ref[0] == "saida":
+            return pilha is None
+        if ref[0] == "forno":
+            if pilha is None:
+                return True
+            if ref[1] == 0:
+                return criacao.fundivel(pilha[0])
+            if ref[1] == 1:
+                return criacao.combustivel(pilha[0])
+            return False
         return self.jogador.inventario.cabe_no(ref, pilha)
+
+    def criar_da_grade(self, tudo=False):
+        """Pega o resultado da grade. tudo=True (Shift): cria o máximo e manda para a mochila."""
+        grade, lado = self.grade_atual()
+        res = criacao.resultado(grade, lado)
+        if res is None:
+            return
+        inv = self.jogador.inventario
+        if tudo:
+            vezes = 0
+            while res is not None and vezes < 64:
+                if inv.adicionar(res[0], res[1]):
+                    self.jogar_no_chao([res[0], res[1]])
+                criacao.consumir(grade)
+                vezes += 1
+                novo = criacao.resultado(grade, lado)
+                if novo is None or novo[0] != res[0]:
+                    break
+                res = novo
+            self.avisar(f"Você criou {ITENS[res[0]]['nome']} x{vezes * res[1]}")
+            return
+        mao = self.arrastando
+        if mao is None:
+            self.arrastando = res
+            self.origem_arrasto = ("saida", 0)
+        elif mao[0] == res[0] and ITENS[res[0]]["pilha"] >= mao[1] + res[1]:
+            mao[1] += res[1]
+        else:
+            return
+        criacao.consumir(grade)
 
     def pegar_arrasto(self, botao, pos):
         inv = self.jogador.inventario
         ref = self.interface.no_ponto(self.interface.slots_inventario, pos)
+        if ref is not None and ref[0] == "saida":
+            self.criar_da_grade()
+            return
         if ref is None or self.arrastando:
             return
         pilha = self.pegar_ref(ref)
@@ -526,6 +631,8 @@ class Jogo:
                 self.origem_arrasto = ref
                 if ref[0] == "bau":
                     self.mundo.marcar_modificado(self.bau_aberto)
+                elif ref[0] == "forno" and self.forno_aberto:
+                    self.mundo.marcar_modificado(self.forno_aberto)
                 return
         self.arrastando = pilha
         self.origem_arrasto = ref
@@ -536,6 +643,9 @@ class Jogo:
             return
         mao = self.arrastando
         ref = self.interface.no_ponto(self.interface.slots_inventario, pos)
+        if ref is not None and ref[0] == "saida":
+            self.devolver_arrasto()                 # soltou na saída: vai para a mochila
+            return
         if ref is None:
             if not self.interface.ret_painel.collidepoint(pos):
                 self.jogar_no_chao(mao)           # soltou fora: joga no chão
@@ -574,60 +684,109 @@ class Jogo:
         self.arrastando = None
         if mao is None:
             return
-        o = self.pegar_ref(self.origem_arrasto)
-        if o is None:
-            self.por_ref(self.origem_arrasto, mao)
-        elif o[0] == mao[0]:
+        origem = self.origem_arrasto
+        o = self.pegar_ref(origem) if origem and origem[0] != "saida" else None
+        if origem and origem[0] != "saida" and o is None and self.cabe_ref(origem, mao):
+            self.por_ref(origem, mao)
+        elif o is not None and o[0] == mao[0] and len(mao) < 3:
             o[1] += mao[1]
         else:
-            sobra = inv.adicionar(mao[0], mao[1])
+            sobra = inv.adicionar(mao[0], mao[1], mao[2] if len(mao) > 2 else None)
             if sobra:
-                self.jogar_no_chao([mao[0], sobra])
+                self.jogar_no_chao([mao[0], sobra] + mao[2:])
 
     def mover_rapido(self, pos):
-        """Shift+clique no baú: manda a pilha direto para o outro lado."""
+        """Shift+clique: manda a pilha direto para o outro lado (baú, forno, grade, mochila)."""
         ref = self.interface.no_ponto(self.interface.slots_inventario, pos)
-        if ref is None or self.bau_aberto is None:
+        if ref is None:
+            return
+        if ref[0] == "saida":
+            self.criar_da_grade(tudo=True)
             return
         pilha = self.pegar_ref(ref)
         if not pilha:
             return
-        if ref[0] == "bau":
-            sobra = self.jogador.inventario.adicionar(pilha[0], pilha[1])
-            self.por_ref(ref, [pilha[0], sobra] if sobra else None)
-        else:
-            sobra = self.guardar_no_bau(pilha[0], pilha[1])
-            self.por_ref(ref, [pilha[0], sobra] if sobra else None)
+        inv = self.jogador.inventario
+        extra = pilha[2:]
+        if ref[0] in ("bau", "grade", "forno"):
+            sobra = inv.adicionar(pilha[0], pilha[1], extra[0] if extra else None)
+            self.por_ref(ref, [pilha[0], sobra] + extra if sobra else None)
+        elif self.estado == "bau" and self.bau_aberto is not None:
+            sobra = self.guardar_em(self.bau_aberto.conteudo, pilha)
+            self.mundo.marcar_modificado(self.bau_aberto)
+            self.por_ref(ref, [pilha[0], sobra] + extra if sobra else None)
+        elif self.estado == "forno" and self.forno_aberto is not None:
+            k = 0 if criacao.fundivel(pilha[0]) else (1 if criacao.combustivel(pilha[0]) else None)
+            if k is None:
+                self.avisar("Isso não vai no forno", 1.2)
+                return
+            sobra = self.guardar_em(self.forno_aberto.conteudo, pilha, so=k)
+            self.mundo.marcar_modificado(self.forno_aberto)
+            self.mundo._sujar()
+            self.por_ref(ref, [pilha[0], sobra] + extra if sobra else None)
+        elif ref[0] == "inv":
+            # mochila <-> barra rápida
+            alvo = range(9, 36) if ref[1] < 9 else range(0, 9)
+            for i in alvo:
+                if inv.espacos[i] is None:
+                    inv.espacos[i] = pilha
+                    inv.espacos[ref[1]] = None
+                    break
 
-    def guardar_no_bau(self, item, qtd):
-        cont = self.bau_aberto.conteudo
-        pilha = ITENS[item]["pilha"]
-        for e in cont:
-            if e and e[0] == item and e[1] < pilha:
-                cabe = min(qtd, pilha - e[1])
+    def guardar_em(self, cont, pilha, so=None):
+        """Põe a pilha numa lista de espaços (baú/forno). Retorna quanto sobrou."""
+        item, qtd = pilha[0], pilha[1]
+        maximo = ITENS[item]["pilha"]
+        indices = [so] if so is not None else range(len(cont))
+        for i in indices:
+            e = cont[i]
+            if e and e[0] == item and e[1] < maximo and len(e) < 3:
+                cabe = min(qtd, maximo - e[1])
                 e[1] += cabe
                 qtd -= cabe
-        for i, e in enumerate(cont):
-            if qtd and e is None:
-                cabe = min(qtd, pilha)
-                cont[i] = [item, cabe]
+        for i in indices:
+            if qtd and cont[i] is None:
+                cabe = min(qtd, maximo)
+                cont[i] = [item, cabe] + list(pilha[2:])
                 qtd -= cabe
-        self.mundo.marcar_modificado(self.bau_aberto)
         return qtd
+
+    def guardar_no_bau(self, item, qtd):
+        sobra = self.guardar_em(self.bau_aberto.conteudo, [item, qtd])
+        self.mundo.marcar_modificado(self.bau_aberto)
+        return sobra
 
     def abrir_bau(self, bau):
         self.bau_aberto = bau
         self.estado = "bau"
 
+    def abrir_bancada(self, bancada):
+        self.estado = "bancada"
+
+    def abrir_forno(self, forno):
+        self.forno_aberto = forno
+        self.estado = "forno"
+
     def fechar_inventario(self):
         self.devolver_arrasto()
+        # [v0.5] o que ficou nas grades volta para a mochila
+        inv = self.jogador.inventario
+        for grade in (self.grade2, self.grade3):
+            for i, e in enumerate(grade):
+                if e:
+                    sobra = inv.adicionar(e[0], e[1], e[2] if len(e) > 2 else None)
+                    if sobra:
+                        self.jogar_no_chao([e[0], sobra] + e[2:])
+                    grade[i] = None
         self.bau_aberto = None
+        self.forno_aberto = None
         self.estado = "jogando"
 
     def jogar_no_chao(self, pilha):
         j = self.jogador
         fx, fy = j.ponto_frente(14)
         it = ItemChao(pilha[0], fx, fy + 4, pilha[1])
+        it.usos = pilha[2] if len(pilha) > 2 else None
         it.idade = -1.0              # demora um pouco para ser puxado de volta
         self.mundo.itens.append(it)
         self.avisar(f"Você jogou {pilha[1]}x {ITENS[pilha[0]]['nome']}")
@@ -642,6 +801,8 @@ class Jogo:
     def pode_criar(self, rc):
         inv = self.jogador.inventario
         est = rc.get("estacao")
+        if est == "bancada" and self.estado == "bancada":
+            est = None
         if est and not self.estacao_perto(est):
             return False, "Precisa de " + {"bancada": "uma bancada", "forno": "um forno"}.get(est, "uma fogueira acesa") + " por perto"
         for item, qtd in rc["custo"].items():
@@ -662,6 +823,7 @@ class Jogo:
         if sobra:
             self.jogar_no_chao([rc["item"], sobra])
         self.avisar(f"Você criou: {ITENS[rc['item']]['nome']}!")
+        self.jogador.exaustao += 0.05
         return True
 
     # ===========================================================
@@ -671,6 +833,9 @@ class Jogo:
         j = self.jogador
         if self.estruturas.golpear(obj):                    # [ESTRUTURAS] baú, escada...
             return
+        if obj.tipo == "buraco":                            # [v0.5]
+            self.avisar("Fique em cima do buraco e aperte E para descer (ou tape com um bloco)", 2)
+            return
         info = OBJETOS[obj.tipo]
         ferramenta = info.get("ferramenta")
         poder = j.inventario.poder_ferramenta(ferramenta) if ferramenta else 1
@@ -678,12 +843,19 @@ class Jogo:
             self.avisar("Você não pode usar ferramentas nadando", 1.2)
             return
         obj.tremor = 0.2
+        self.mundo.golpeado(obj)
         j.tempo_golpe = DURACAO_GOLPE
         if poder < info.get("poder_min", 0):
-            self.avisar("Precisa de uma picareta de pedra (ou melhor)", 1.5)
+            if ferramenta == "picareta":
+                self.avisar(f"Precisa de {picareta_para(info['poder_min'])} (ou melhor)", 1.5)
+            else:
+                self.avisar("Precisa de uma ferramenta melhor", 1.5)
             return
         obj.vida -= poder
         obj.tempo_sem_golpe = 0.0
+        j.exaustao += 0.05
+        if ferramenta and poder > 1:
+            self.gastar_ferramenta(ferramenta)
         self.soltar_lascas(obj.centro, obj.tipo, 4)
         if obj.vida <= 0:
             self.quebrar(obj)
@@ -700,8 +872,10 @@ class Jogo:
             drops = info["drops_vazio"] if obj.tipo == "arbusto" else info["drops"]
             if obj.maduro:
                 drops = info["drops_maduro"]
-            if obj.conteudo:                 # baú quebrado solta o que tinha dentro
+            if obj.conteudo:                 # baú/forno quebrado solta o que tinha dentro
                 drops = drops + [tuple(e) for e in obj.conteudo if e]
+            if info.get("xp"):               # [v0.5] minérios dão XP
+                self.soltar_xp(obj.centro, info["xp"])
             if obj.tipo == "cama" and self.ponto_renascer == (obj.tx, obj.ty):
                 self.ponto_renascer = None
                 self.avisar("Sua cama foi desmontada: você vai renascer no início")
@@ -710,9 +884,143 @@ class Jogo:
         self.soltar_itens(drops, *obj.centro)
 
     def soltar_itens(self, drops, x, y):
-        for item, qtd in drops:
+        for d in drops:
+            item, qtd = d[0], d[1]
+            if len(d) > 2:                   # ferramenta com durabilidade: sai inteira
+                it = ItemChao(item, x + random.uniform(-3, 3), y + random.uniform(-2, 4), qtd)
+                it.usos = d[2]
+                self.mundo.itens.append(it)
+                continue
             for _ in range(qtd):
                 self.mundo.itens.append(ItemChao(item, x + random.uniform(-3, 3), y + random.uniform(-2, 4)))
+
+    # ===========================================================
+    # [v0.5] Durabilidade, XP e explosões
+    # ===========================================================
+    def _ref_ferramenta(self, tipo):
+        """Onde está a melhor ferramenta desse tipo (na mão ou equipada)."""
+        inv = self.jogador.inventario
+        melhor, poder = None, 0
+        for ref in (("inv", inv.selecionado), ("equip", "ferramenta"), ("equip", "arma")):
+            e = inv.pegar(ref)
+            f = ITENS[e[0]].get("ferramenta") if e else None
+            if f and f[0] == tipo and f[1] > poder:
+                melhor, poder = ref, f[1]
+        return melhor
+
+    def _ref_arma(self):
+        inv = self.jogador.inventario
+        melhor, dano = None, 0
+        for ref in (("inv", inv.selecionado), ("equip", "arma")):
+            e = inv.pegar(ref)
+            d = ITENS[e[0]].get("dano", 0) if e else 0
+            if d > dano:
+                melhor, dano = ref, d
+        return melhor
+
+    def gastar_ref(self, ref, usos=1):
+        if ref is None:
+            return
+        inv = self.jogador.inventario
+        e = inv.pegar(ref)
+        if not e or len(e) < 3:
+            return
+        e[2] -= usos
+        if e[2] <= 0:
+            inv.por(ref, None)
+            self.avisar(f"Seu item quebrou: {ITENS[e[0]]['nome']}!", 2.5)
+            self.soltar_lascas(self.jogador.centro, "pedra", 8)
+
+    def gastar_ferramenta(self, tipo):
+        self.gastar_ref(self._ref_ferramenta(tipo))
+
+    def soltar_xp(self, centro, pontos):
+        x, y = centro
+        while pontos > 0:
+            v = min(XP_ORBE, pontos)
+            pontos -= v
+            ang = random.uniform(0, math.tau)
+            self.orbes.append({"x": x, "y": y, "vx": math.cos(ang) * 30, "vy": math.sin(ang) * 30,
+                               "v": v, "t": 0.0})
+
+    def atualizar_orbes(self, dt):
+        j = self.jogador
+        vivos = []
+        for o in self.orbes:
+            o["t"] += dt
+            dx, dy = j.x - o["x"], (j.y - 6) - o["y"]
+            d = math.hypot(dx, dy) or 1.0
+            if o["t"] > 0.5 and d < 56:
+                vel = 70 + (56 - d) * 4
+                o["vx"], o["vy"] = dx / d * vel, dy / d * vel
+            else:
+                o["vx"] *= 0.9
+                o["vy"] *= 0.9
+            o["x"] += o["vx"] * dt
+            o["y"] += o["vy"] * dt
+            if o["t"] > 0.5 and d < 6:
+                nivel = self.nivel_xp()[0]
+                j.xp += o["v"]
+                if self.nivel_xp()[0] > nivel:
+                    self.avisar(f"Você subiu para o nível {self.nivel_xp()[0]}!", 2.5)
+                    self.popup_texto(f"Nível {self.nivel_xp()[0]}!", j.x, j.y - 24, (170, 255, 120))
+                continue
+            if o["t"] < 300:
+                vivos.append(o)
+        self.orbes = vivos
+
+    def nivel_xp(self):
+        """(nível, fração até o próximo)."""
+        xp, nivel = self.jogador.xp, 0
+        while xp >= 7 + 2 * nivel:
+            xp -= 7 + 2 * nivel
+            nivel += 1
+        return nivel, xp / (7 + 2 * nivel)
+
+    def explosao(self, x, y, raio, dano):
+        """Explosivo: quebra blocos em volta, machuca e empurra."""
+        self.tremor_tela = 0.35
+        for _ in range(40):
+            ang = random.uniform(0, math.tau)
+            vel = random.uniform(30, 120)
+            self.particulas.append([x, y, math.cos(ang) * vel, math.sin(ang) * vel - 40,
+                                    random.uniform(0.3, 0.8), random.choice(COR_LASCAS["explosao"])])
+        rpx = raio * TILE
+        j = self.jogador
+        d = math.hypot(j.x - x, j.y - 6 - y)
+        if d < rpx * 1.4:
+            real = j.levar_dano(dano * max(0.15, 1 - d / (rpx * 1.4)))
+            if real:
+                self.avisar(f"BUM! (-{real})", 2)
+                self.gastar_armadura()
+            dd = d or 1.0
+            j.vx += (j.x - x) / dd * 160
+            j.vy += (j.y - y) / dd * 160
+        for c in self.criaturas:
+            dc = math.hypot(c.x - x, c.y - y)
+            if dc < rpx * 1.2:
+                c.levar_golpe(dano * 0.4 * (1 - dc / (rpx * 1.2)) + 1, x, y)
+        if self.estruturas.subterraneo:
+            return
+        tx0, ty0 = int(x // TILE), int((y + 4) // TILE)
+        r = int(math.ceil(raio))
+        protegidos = ("bau", "cama", "forno", "bancada", "buraco", "escada", "bau_tesouro", "bau_tesouro_aberto",
+                      "poco", "trono", "escada_descer", "escada_subir", "porta")
+        for ty in range(ty0 - r, ty0 + r + 1):
+            for tx in range(tx0 - r, tx0 + r + 1):
+                if math.hypot(tx - tx0, ty - ty0) > raio:
+                    continue
+                o = self.mundo.objeto(tx, ty)
+                if o is None or o.tipo in protegidos:
+                    continue
+                self.mundo.remover(o)
+                if random.random() < 0.35:
+                    drops = OBJETOS[o.tipo].get("drops", [])
+                    self.soltar_itens(drops[:1], *o.centro)
+
+    def gastar_armadura(self):
+        for slot in ("cabeca", "corpo"):
+            self.gastar_ref(("equip", slot))
 
     def soltar_lascas(self, centro, tipo, quantidade):
         cores = COR_LASCAS.get(tipo, [(220, 220, 220)])
@@ -728,7 +1036,7 @@ class Jogo:
         restantes = []
         for it in self.mundo.itens:
             if it.pode_pegar and it.distancia_jogador(j) < RAIO_PEGAR_ITENS:
-                sobra = j.inventario.adicionar(it.item, it.quantidade)
+                sobra = j.inventario.adicionar(it.item, it.quantidade, getattr(it, "usos", None))
                 if it.quantidade - sobra:
                     self.popup(it.item, it.quantidade - sobra)
                 if sobra:
@@ -760,8 +1068,9 @@ class Jogo:
             return False, "Longe demais"
         if self.jogador.nadando:
             return False, "Não dá para construir nadando"
-        if m.tipo_chao(tx, ty) in CHAO_AGUA:
-            return False, "Não dá para construir na água"
+        bloco = ITENS[item].get("objeto", item) in TIPOS_BLOCO
+        if m.tipo_chao(tx, ty) in CHAO_AGUA + (LAVA,) and not bloco:
+            return False, "Não dá para construir na água" if m.tipo_chao(tx, ty) != LAVA else "Isso queimaria na lava"
         if item == "sementes_trigo" and m.tipo_chao(tx, ty) not in CHAO_PLANTAVEL:
             return False, "Plante na grama ou na terra"
         if not self.no_alcance(tx * TILE + 8, ty * TILE + 8, folga=6):
@@ -773,8 +1082,12 @@ class Jogo:
             if obj and not obj.construcao:
                 return False, "Tem algo no caminho"
             return True, ""
-        if obj:
+        if obj and not (bloco and obj.tipo == "buraco"):
             return False, "Tem algo no caminho"
+        if item == "escada" and self.camadas.z >= 0:
+            return False, "Escada de mão é para subir das cavernas (para descer: cave com a pá)"
+        if bloco and m.piso(tx, ty):
+            return False, "Tem um piso aqui"
         ret = pygame.Rect(tx * TILE, ty * TILE, TILE, TILE)
         if ret.colliderect(self.jogador.retangulo()):
             return False, "Você está no caminho"
@@ -792,8 +1105,24 @@ class Jogo:
             if avisar:
                 self.avisar(motivo, 1.5)
             return False
+        if item == "escada":                                 # [v0.5] escada abre buraco em cima
+            ok, motivo = self.camadas.colocar_escada(tx, ty)
+            if not ok:
+                if avisar:
+                    self.avisar(motivo, 2)
+                return False
+            inv.remover(item, 1)
+            return True
         inv.remover(item, 1)
-        novo = Objeto(ITENS[item].get("objeto", item), tx, ty)
+        tipo = ITENS[item].get("objeto", item)
+        velho = self.mundo.objeto(tx, ty)
+        if velho is not None and velho.tipo == "buraco":
+            self.mundo.remover(velho)                         # tapou o buraco
+        ch = self.mundo.chunk(tx, ty)
+        k = (ty % CH) * CH + (tx % CH)
+        if tipo in TIPOS_BLOCO and ch.chao[k] in CHAO_AGUA + (LAVA,):
+            ch.mudar_chao(k, CAVERNA if self.camadas.z < 0 else LAMA)   # aterra a água / apaga a lava
+        novo = Objeto(tipo, tx, ty)
         self.mundo.colocar(novo)
         self.soltar_lascas(novo.centro, item, 5)
         self.jogador.olhar_para(*novo.centro)
@@ -817,6 +1146,15 @@ class Jogo:
         alvo, alcanca = self.alvo_mouse()
         if alvo and alcanca and alvo.tipo == "bau":
             self.abrir_bau(alvo)
+            return
+        if alvo and alcanca and alvo.tipo == "bancada":       # [v0.5] grade 3x3
+            self.abrir_bancada(alvo)
+            return
+        if alvo and alcanca and alvo.tipo == "forno":
+            self.abrir_forno(alvo)
+            return
+        if alvo and alcanca and alvo.tipo == "fogueira" and (tipo != "construcao" or item == "madeira"):
+            self.usar_fogueira(alvo)
             return
         if alvo and alcanca and alvo.tipo == "cama":
             self.usar_cama(alvo)
@@ -844,6 +1182,7 @@ class Jogo:
         if not j.inventario.remover(item, 1):
             return False
         j.fome = min(FOME_MAX, j.fome + info.get("fome", 0))
+        j.saturacao = min(j.fome, j.saturacao + info.get("saturacao", info.get("fome", 0) * 0.6))
         j.sede = min(SEDE_MAX, j.sede + info.get("sede", 0))
         j.vida = max(1.0, min(VIDA_MAX, j.vida + info.get("vida", 0)))
         if info.get("devolve"):
@@ -935,6 +1274,7 @@ class Jogo:
         if p and p["mordendo"] > 0:
             j = self.jogador
             dx, dy = j.x - p["x"], j.y - p["y"]
+            self.gastar_ferramenta("pesca")
             it = ItemChao("peixe", p["x"], p["y"], 1, vx=dx * 1.8, vy=dy * 1.8)
             it.vz, it.z = 110.0, 1.0           # o peixe pula para fora da água
             self.mundo.itens.append(it)
@@ -947,6 +1287,8 @@ class Jogo:
     # ===========================================================
     def interagir(self):
         j = self.jogador
+        if self.camadas.interagir():                        # [v0.5] buraco (descer) / escada (subir)
+            return
         if j.espera_coleta > 0:
             return
         j.espera_coleta = TEMPO_ENTRE_GOLPES
@@ -954,6 +1296,13 @@ class Jogo:
             return
         cx, cy = j.centro
         inv = j.inventario
+        estacao = self.mundo.objeto_mais_proximo(cx, cy, 24, tipos=("bancada", "forno"))
+        if estacao and estacao.tipo == "bancada":
+            self.abrir_bancada(estacao)
+            return
+        if estacao and estacao.tipo == "forno":
+            self.abrir_forno(estacao)
+            return
         fogueira = self.mundo.objeto_mais_proximo(cx, cy, 36, tipos=("fogueira",))
         if fogueira and fogueira.acesa and any(inv.tem(c) for c in COMIDA_CRUA):
             self.usar_fogueira(fogueira)
@@ -983,6 +1332,9 @@ class Jogo:
             return ""
         if self.pesca:
             return "Clique para fisgar!" if self.pesca["mordendo"] > 0 else "Esperando o peixe morder..."
+        dica = self.camadas.dica()                          # [v0.5]
+        if dica:
+            return dica
         dica = self.estruturas.dica()                       # [ESTRUTURAS]
         if dica:
             return dica
@@ -1000,6 +1352,16 @@ class Jogo:
                 return "[Botão direito / E] Abrir baú   [Segurar esquerdo] Quebrar"
             if obj.tipo == "cama":
                 return "[Botão direito / E] Dormir   [Segurar esquerdo] Quebrar"
+            if obj.tipo == "bancada":
+                return "[Botão direito / E] Grade de criação 3x3   [Segurar esquerdo] Quebrar"
+            if obj.tipo == "forno":
+                return "[Botão direito / E] Abrir forno   [Segurar esquerdo] Quebrar"
+            if obj.tipo == "buraco":
+                return "Buraco: fique em cima e aperte E para descer"
+            if obj.bloco:
+                info = OBJETOS[obj.tipo]
+                if self.jogador.inventario.poder_ferramenta(info.get("ferramenta")) < info.get("poder_min", 0):
+                    return f"{nome}: precisa de {picareta_para(info['poder_min'])}"
             if obj.tipo == "plantacao":
                 return "[Segure o clique] Colher trigo" if obj.maduro else \
                     f"Trigo crescendo ({obj.estagio + 1}/4)" + ("  -  parado no inverno" if self.estacao == "inverno" else "")
@@ -1017,6 +1379,10 @@ class Jogo:
             tx, ty = self.bloco_mouse()
             if self.mundo.tipo_chao(tx, ty) in CHAO_AGUA:
                 return "[Botão direito] Pescar"
+        if self.pode_cavar_mouse():
+            return "[Segure o clique] Cavar o chão (abre um buraco para descer)"
+        if self.mundo.tipo_chao(int(j.x // TILE), int((j.y - 2) // TILE)) == LAVA:
+            return "Saia da lava!"
         return ""
 
     # ===========================================================
@@ -1041,6 +1407,7 @@ class Jogo:
         j.espera_ataque = 0.55
         j.tempo_golpe = DURACAO_GOLPE
         self.flechas.append(Flecha(cx, cy - 1, mira[0] - cx, mira[1] - cy, ITENS["arco"]["disparo"]))
+        self.gastar_ref(self._ref_arma() if inv.item_selecionado() == "arco" else None)
 
     def atacar(self, mira=None):
         j = self.jogador
@@ -1063,6 +1430,8 @@ class Jogo:
         else:
             fx, fy = j.ponto_frente(alcance)
         dano = j.inventario.dano()
+        j.exaustao += 0.1
+        acertou = False
         for c in self.criaturas:
             sx, sy = c.centro
             perto = math.hypot(sx - fx, sy - fy) < 14 or (alcance > 10 and math.hypot(sx - cx, sy - cy) < alcance + 4
@@ -1070,25 +1439,33 @@ class Jogo:
             no_mouse = mira is not None and math.hypot(sx - mira[0], sy - mira[1]) < 9 and self.no_alcance(sx, sy)
             if perto or no_mouse:
                 c.levar_golpe(dano, j.x, j.y)
+                acertou = True
+        if acertou:
+            self.gastar_ref(self._ref_arma())
 
     def jogador_atacado(self, criatura):
         real = self.jogador.levar_dano(criatura.info.get("dano", 5))
         if real:
             self.avisar(f"{criatura.info['nome']} te atacou! (-{real})", 1.5)
+            self.gastar_armadura()
 
     def criatura_morreu(self, c):
         self.derrotados += 1
         self.soltar_lascas(c.centro, "", 8)
+        if getattr(c, "pavio", 0) > 0 and c.morta:
+            return                       # explodiu: não solta nada
         if c.tipo == "slime" and self.nivel_escuridao() < 0.2:
             return                       # derreteu no sol: não solta nada
         self.soltar_itens(CRIATURAS[c.tipo].get("drops", []), *c.centro)
+        info = CRIATURAS[c.tipo]
+        self.soltar_xp(c.centro, info.get("xp", blocos.XP_CRIATURA_PADRAO.get(info.get("comportamento"), 0)))
 
     # ===========================================================
     # Cama, renascer, temperatura e mapa
     # ===========================================================
     def usar_cama(self, cama):
         if self.subterraneo():
-            self.avisar("Não dá para dormir na masmorra!")
+            self.avisar("Não dá para dormir aqui embaixo!")
             return
         self.ponto_renascer = (cama.tx, cama.ty)
         if not self.e_noite():
@@ -1122,10 +1499,15 @@ class Jogo:
         j = self.jogador
         inv = j.inventario
         pilhas = [e for e in inv.espacos if e] + [e for e in inv.equipamento.values() if e]
-        for item, qtd in pilhas:
-            it = ItemChao(item, j.x + random.uniform(-6, 6), j.y + random.uniform(-4, 4), qtd)
+        for e in pilhas:
+            it = ItemChao(e[0], j.x + random.uniform(-6, 6), j.y + random.uniform(-4, 4), e[1])
+            it.usos = e[2] if len(e) > 2 else None
             it.idade = 0.5
             self.mundo.itens.append(it)
+        if j.xp:
+            self.soltar_xp((j.x, j.y - 6), j.xp // 2)        # metade do XP fica no chão
+        if self.camadas.z != 0:                              # [v0.5] morreu na caverna: volta para cima
+            self.camadas.trocar(0, j.x, j.y, aviso=False)
         novo = Jogador(0, 0)
         if self.ponto_renascer and self.mundo.objeto(*self.ponto_renascer) is None:
             self.mundo.atualizar_chunks(self.ponto_renascer[0] * TILE, self.ponto_renascer[1] * TILE, limite=99)
@@ -1149,8 +1531,10 @@ class Jogo:
         return self._temp
 
     def subterraneo(self):
+        """Masmorra ou caverna (sem chuva, sem sol, sem dormir)."""
         e = getattr(self, "estruturas", None)
-        return bool(e and e.subterraneo)
+        c = getattr(self, "camadas", None)
+        return bool(e and e.subterraneo) or bool(c and c.z < 0)
 
     def calcular_temperatura(self):
         j = self.jogador
@@ -1160,6 +1544,8 @@ class Jogo:
             self.mundo.estacao_perto("forno", cx, cy, 40) is not None
         if self.subterraneo():                      # debaixo da terra é sempre fresco
             t = 12.0 + (16 if fogo else 0)
+            if self.camadas.z <= -4:
+                t += 8                               # perto da lava é quente
             self._temp = (t, estacoes.efeito_temperatura(t)[0])
             return t
         t = estacoes.temperatura(self.mundo.bioma(tx, ty), self.estacao, self.nivel_escuridao() / ESCURIDAO_MAXIMA,
@@ -1200,7 +1586,7 @@ class Jogo:
                 if o.tipo == "bau":
                     lista.append({"tx": o.tx + 0.5, "ty": o.ty + 0.5, "tipo": "bau", "cor": (200, 150, 80)})
         e = getattr(self, "estruturas", None)
-        if e is not None and not e.subterraneo:
+        if e is not None and not e.subterraneo and self.camadas.z == 0:
             for est in self.estruturas_descobertas():
                 if True:
                     x0, y0, x1, y1 = est.caixa
@@ -1285,7 +1671,7 @@ class Jogo:
         self.acoes_mouse()
         self.atualizar_pesca(dt)
         self.flechas = [f for f in self.flechas if not self.atualizar_flecha(f, dt)]
-        if not self.subterraneo():
+        if not self.estruturas.subterraneo:
             self.minimapa.atualizar(dt, self)
         self.mundo.atualizar_chunks(j.x, j.y, limite=CHUNKS_POR_QUADRO)
         self.mundo.atualizar(dt)
@@ -1296,7 +1682,11 @@ class Jogo:
             c.atualizar(dt, self)
         self.ecossistema.atualizar(dt)
         self.atualizar_chuva(dt)
-        self.estruturas.atualizar(dt)                       # [ESTRUTURAS]
+        if self.camadas.z == 0:
+            self.estruturas.atualizar(dt)                   # [ESTRUTURAS]
+        self.camadas.atualizar(dt)                          # [v0.5]
+        self.atualizar_orbes(dt)
+        self.tremor_tela = max(0.0, self.tremor_tela - dt)
         self.centralizar_camera()
         if j.vida <= 0:
             self.estado = "morto"
@@ -1323,6 +1713,13 @@ class Jogo:
         """Move a flecha; devolve True quando ela some."""
         if f.atualizar(dt, self.mundo):
             return True
+        if getattr(f, "hostil", False):                     # [v0.5] flecha de esqueleto
+            jx, jy = self.jogador.centro
+            if math.hypot(jx - f.x, jy - f.y) < 7:
+                if f.dono is not None:
+                    self.jogador_atacado(f.dono)
+                return True
+            return False
         for c in self.criaturas:
             sx, sy = c.centro
             if math.hypot(sx - f.x, sy - f.y) < 7:
@@ -1348,6 +1745,17 @@ class Jogo:
                     j.espera_coleta = TEMPO_ENTRE_GOLPES
                     j.olhar_para(*obj.centro)
                     self.golpear(obj)
+            elif self.pode_cavar_mouse():                   # [v0.5] cavar o chão
+                if j.espera_coleta <= 0:
+                    j.espera_coleta = TEMPO_ENTRE_GOLPES
+                    tx, ty = self.bloco_mouse()
+                    j.olhar_para(tx * TILE + 8, ty * TILE + 8)
+                    j.tempo_golpe = DURACAO_GOLPE
+                    inv = j.inventario
+                    if self.camadas.cavar(tx, ty, inv.poder_ferramenta):
+                        j.exaustao += 0.05
+                        tipo = "pa" if inv.poder_ferramenta("pa") > 1 else "picareta"
+                        self.gastar_ferramenta(tipo)
             else:
                 self.atacar(mira)
         elif direito and j.espera_construir <= 0:
@@ -1356,18 +1764,65 @@ class Jogo:
                 j.espera_construir = TEMPO_ENTRE_CONSTRUCOES
                 self.tentar_colocar(*self.bloco_mouse())
 
+    def pode_cavar_mouse(self):
+        """[v0.5] Mouse num chão cavável, com pá/picareta, no alcance?"""
+        if not self.mouse_no_mundo() or self.estado != "jogando":
+            return False
+        inv = self.jogador.inventario
+        mao = inv.item_selecionado()
+        if mao and ITENS[mao]["tipo"] == "arma":
+            return False
+        if inv.poder_ferramenta("pa") <= 1 and inv.poder_ferramenta("picareta") <= 1:
+            return False
+        tx, ty = self.bloco_mouse()
+        if not self.no_alcance(tx * TILE + 8, ty * TILE + 8, folga=6):
+            return False
+        if self.mundo.objeto(tx, ty) is not None:
+            return False
+        return self.camadas.pode_cavar(tx, ty)[0]
+
     def atualizar_status(self, dt):
+        """[v0.5] Fome estilo Minecraft: o cansaço (exaustão) gasta primeiro a saturação
+        (escondida) e depois a barra de fome. Com fome alta você se cura; com fome zero, perde vida."""
         j = self.jogador
         _, mf, ms, dano_frio = estacoes.efeito_temperatura(self.calcular_temperatura())
         sede = SEDE_POR_SEGUNDO * (1.3 if self.clima.estado == "seca" else 1.0) * ms
-        j.fome = max(0.0, j.fome - FOME_POR_SEGUNDO * mf * (1.25 if j.correndo else 1.0) * dt)
+        j.exaustao += EXAUSTAO_BASE * mf * dt
+        if j.andando:
+            j.exaustao += EXAUSTAO_ANDAR * dt
+        if j.correndo:
+            j.exaustao += EXAUSTAO_CORRER * dt
+        if j.nadando:
+            j.exaustao += EXAUSTAO_NADAR * dt
+        while j.exaustao >= 4.0:
+            j.exaustao -= 4.0
+            if j.saturacao > 0:
+                j.saturacao = max(0.0, j.saturacao - 5.0)
+            else:
+                j.fome = max(0.0, j.fome - 5.0)
         j.sede = max(0.0, j.sede - sede * dt)
         if dano_frio and not j.inventario.equipamento["corpo"]:
             j.vida = max(0.0, j.vida - dano_frio * dt)
+        j.tempo_regen += dt
         if j.fome <= 0 or j.sede <= 0:
-            j.vida = max(0.0, j.vida - DANO_FOME_SEDE * dt)
-        elif j.fome > 60 and j.sede > 60 and j.vida > 0:
-            j.vida = min(VIDA_MAX, j.vida + REGENERACAO_VIDA * dt)
+            if j.tempo_regen >= 2.0:
+                j.tempo_regen = 0.0
+                j.vida = max(0.0, j.vida - 5.0)
+                self.avisar("Você está morrendo de " + ("fome!" if j.fome <= 0 else "sede!"), 1.5)
+        elif j.fome >= 90 and j.sede > 30 and 0 < j.vida < VIDA_MAX:
+            rapido = j.fome >= FOME_MAX and j.saturacao > 0
+            if j.tempo_regen >= (1.0 if rapido else 3.0):
+                j.tempo_regen = 0.0
+                j.vida = min(VIDA_MAX, j.vida + 5.0)
+                j.exaustao += 3.0
+        elif j.tempo_regen > 4.0:
+            j.tempo_regen = 0.0
+        # [v0.5] lava queima
+        if self.mundo.tipo_chao(int(j.x // TILE), int((j.y - 2) // TILE)) == LAVA:
+            j.vida = max(0.0, j.vida - 14.0 * dt)
+            if int(self.tempo_total * 4) % 2:
+                self.soltar_lascas((j.x, j.y - 4), "explosao", 1)
+            self.avisar("Você está na lava!", 0.6)
 
     def atualizar_chuva(self, dt):
         neve = self.estacao == "inverno"
@@ -1392,6 +1847,9 @@ class Jogo:
         j = self.jogador
         self.camera_x = int(j.x - LARGURA_INTERNA / 2)
         self.camera_y = int(j.y - 6 - ALTURA_INTERNA / 2)
+        if getattr(self, "tremor_tela", 0) > 0:
+            self.camera_x += random.randint(-2, 2)
+            self.camera_y += random.randint(-2, 2)
 
     # ===========================================================
     # Desenho
@@ -1439,7 +1897,7 @@ class Jogo:
             for tx in range(tx0, tx1 + 1):
                 obj = self.mundo.objeto(tx, ty)
                 if obj:
-                    lista.append((obj.base_y, 0, obj))
+                    lista.append((obj.ty * TILE if obj.tipo in PLANOS else obj.base_y, 0, obj))
                     visiveis.append(obj)
                 p = self.mundo.piso(tx, ty)
                 if p and p.vida < p.vida_max:
@@ -1455,6 +1913,10 @@ class Jogo:
                 lista.append((self.jogador.y, 3, self.jogador))
         for f in self.flechas:
             lista.append((f.y + 4, 4, f))
+        cav = self.camadas.fracao_cavando()                 # [v0.5] rachaduras no chão
+        if cav:
+            est = min(3, 1 + int(cav[2] * 3))
+            cena.blit(self.sprites.rachaduras_chao[est], (cav[0] * TILE - cx, cav[1] * TILE - cy))
         lista.sort(key=lambda e: (e[0], e[1]))
         for _, tipo, coisa in lista:
             if tipo == 0:
@@ -1467,6 +1929,10 @@ class Jogo:
                 self.desenhar_jogador(cena, cx, cy)
             else:
                 self.desenhar_flecha(cena, coisa, cx, cy)
+        for o in self.orbes:                                # [v0.5] XP
+            r = 2 if int(self.tempo_total * 6 + o["x"]) % 2 else 1
+            pygame.draw.circle(cena, (120, 230, 60), (int(o["x"] - cx), int(o["y"] - cy)), r + 1)
+            pygame.draw.circle(cena, (230, 255, 140), (int(o["x"] - cx), int(o["y"] - cy)), r)
         for pt in self.particulas:
             cena.fill(pt[5], (int(pt[0] - cx), int(pt[1] - cy), 1, 1))
         if self.pesca:
@@ -1474,6 +1940,7 @@ class Jogo:
 
         # 3) luz, chuva e mira
         self.desenhar_luz(cena, cx, cy)
+        self.camadas.desenhar_espiar(cena, cx, cy)          # [v0.5] V: camada de cima
         if self.estacao == "inverno":
             for g in self.gotas:
                 cena.fill((240, 244, 255), (int(g[0]), int(g[1]), 1 + (int(g[2] * 10) % 3 == 0), 1))
@@ -1509,6 +1976,10 @@ class Jogo:
             ui.desenhar_inventario(self.tela, self, self.pos_mouse)
         elif self.estado == "bau":
             ui.desenhar_bau(self.tela, self, self.pos_mouse)
+        elif self.estado == "bancada":
+            ui.desenhar_bancada(self.tela, self, self.pos_mouse)
+        elif self.estado == "forno":
+            ui.desenhar_forno(self.tela, self, self.pos_mouse)
         elif self.estado == "ajuda":
             ui.desenhar_ajuda(self.tela, self)
         elif self.estado == "morto":
@@ -1536,7 +2007,7 @@ class Jogo:
         elif obj.tipo == "tocha":
             img = sp.tocha[int(self.tempo_total * 7 + obj.tx) % 3]
         elif obj.tipo == "forno":
-            img = sp.forno[int(self.tempo_total * 5) % 2]
+            img = sp.forno[int(self.tempo_total * 5) % 2] if obj.queima > 0 else sp.forno_apagado
         else:
             balanco = 0
             if obj.tipo in ANIMADOS and obj.tremor <= 0:
@@ -1572,6 +2043,8 @@ class Jogo:
     def desenhar_criatura(self, cena, c, cx, cy):
         imgs = self.sprites.criaturas[c.tipo]
         img = imgs["branco"] if c.piscar > 0 else imgs[c.olhando][c.quadro()]
+        if getattr(c, "pavio", 0) > 0 and c.piscar <= 0:
+            img = pygame.transform.scale(img, (17, 17))    # Explosivo inchando
         if c.piscar > 0 and c.olhando == "esquerda":
             img = pygame.transform.flip(img, True, False)
         x, y = int(c.x - 8 - cx), int(c.y - 15 - cy)
@@ -1641,6 +2114,21 @@ class Jogo:
 
     def desenhar_luz(self, cena, cx, cy):
         """Escuridão da noite/chuva: máscara multiplicada; fogueiras somam luz."""
+        if self.camadas.z < 0 and self.estado != "menu_inicial":     # [v0.5] caverna: escuro total
+            m = self.mascara_luz
+            self.camadas.desenhar_luzes(m, cx, cy)
+            jx, jy = int(self.jogador.x - cx), int(self.jogador.y - 6 - cy)
+            if personagem.icone_na_mao(self.jogador.inventario, None) == "tocha":
+                r = RAIO_LUZ_TOCHA_MAO + (1 if int(self.tempo_total * 7) % 2 else 0)
+                m.blit(gradiente_luz(r), (jx - r, jy - r), special_flags=pygame.BLEND_RGB_ADD)
+            for f, raio in self.mundo.lista_luzes():
+                fx, fy = int(f.centro[0] - cx), int(f.centro[1] - cy)
+                if -100 < fx < LARGURA_INTERNA + 100 and -100 < fy < ALTURA_INTERNA + 100:
+                    raio = raio + (2 if int(self.tempo_total * 6 + f.tx) % 2 else 0)
+                    cor = (255, 240, 200) if f.tipo == "lampada" else (255, 200, 140)
+                    m.blit(gradiente_luz(raio, cor), (fx - raio, fy - raio), special_flags=pygame.BLEND_RGB_ADD)
+            cena.blit(m, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+            return
         n = self.nivel_escuridao()
         chuva = self.clima.chuva
         n = min(ESCURIDAO_MAXIMA, n + 0.28 * chuva * (1 - n))

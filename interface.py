@@ -36,7 +36,9 @@ DOURADO_ESC = (176, 132, 48)
 CINZA_TEXTO = (196, 190, 210)
 VERDE = (140, 230, 120)
 VERMELHO = (240, 110, 100)
-COR_TIER = {"madeira": (214, 170, 120), "pedra": (190, 196, 210), "ferro": (150, 210, 255)}
+COR_TIER = {"madeira": (214, 170, 120), "pedra": (190, 196, 210), "ferro": (150, 210, 255),
+            "diamante": (120, 245, 235)}
+COR_XP = (130, 230, 70)
 TIPOS = {"material": "Material", "comida": "Comida", "bebida": "Bebida", "ferramenta": "Ferramenta",
          "arma": "Arma", "armadura": "Armadura", "construcao": "Construção", "utilidade": "Utilidade",
          "municao": "Munição"}
@@ -59,6 +61,7 @@ class Interface:
         self.fonte_titulo = pygame.font.Font(None, 84)
         self.icones = {n: pygame.transform.scale(img, (32, 32)) for n, img in sprites.icones.items()}
         self.icones_peq = {n: pygame.transform.scale(img, (24, 24)) for n, img in sprites.icones.items()}
+        self.icones_mini = {n: pygame.transform.scale(img, (13, 13)) for n, img in sprites.icones.items()}
         self.icones_vazios = {}
         for slot, item in (("cabeca", "capuz_couro"), ("corpo", "roupa_couro"), ("arma", "espada_madeira"),
                            ("ferramenta", "picareta_madeira")):
@@ -174,8 +177,23 @@ class Interface:
             tela.blit(ic, (ret.centerx - 16, ret.centery - 15 + (-2 if destaque else 0)))
             if pilha[1] > 1:
                 self.texto(tela, str(pilha[1]), (ret.right - 5, ret.bottom - 19), self.fonte_peq, direita=True)
+            self.barra_durabilidade(tela, ret, pilha)
         elif vazio is not None:
             tela.blit(vazio, (ret.centerx - 16, ret.centery - 16))
+
+    def barra_durabilidade(self, tela, ret, pilha):
+        """[v0.5] Barrinha de durabilidade (só aparece quando a ferramenta já foi usada)."""
+        if len(pilha) < 3:
+            return
+        maximo = ITENS[pilha[0]].get("durabilidade") or 1
+        frac = max(0.0, min(1.0, pilha[2] / maximo))
+        if frac >= 1.0:
+            return
+        w = ret.w - 14
+        x, y = ret.x + 7, ret.bottom - 9
+        pygame.draw.rect(tela, (16, 14, 20), (x - 1, y - 1, w + 2, 5))
+        cor = (int(255 * min(1, 2 - 2 * frac)), int(255 * min(1, 2 * frac)), 60)
+        pygame.draw.rect(tela, cor, (x, y, max(1, int(w * frac)), 3))
 
     def no_ponto(self, lista, pos):
         for ret, valor in lista:
@@ -243,6 +261,11 @@ class Interface:
         self.desenhar_relogio(tela, jogo)
         self.desenhar_minimapa(tela, jogo)
         self.desenhar_barra_rapida(tela, jogo)
+        z = jogo.camadas.z
+        if z < 0:
+            from camadas import nome_camada
+            self.texto(tela, f"Camada {z}: {nome_camada(z)}", (LARGURA_TELA // 2, 14), self.fonte_media,
+                       (255, 190, 120) if z <= -4 else (190, 210, 255), centro=True, contorno=True)
 
         dica = jogo.dica_interacao()
         if dica:
@@ -281,8 +304,10 @@ class Interface:
         x = ret.x + 92
         self.texto(tela, f"Dia {jogo.dia}   {h:02d}:{m:02d}", (x, ret.y + 12), self.fonte)
         if sub:
-            # na masmorra não se vê o céu: sem estação nem tempo
-            self.texto(tela, "Masmorra", (x, ret.y + 40), self.fonte, (200, 170, 255))
+            # na masmorra / caverna não se vê o céu: sem estação nem tempo
+            z = jogo.camadas.z
+            self.texto(tela, "Masmorra" if jogo.estruturas.subterraneo else f"Caverna ({z})", (x, ret.y + 40),
+                       self.fonte, (200, 170, 255))
             self.texto(tela, "Subsolo - sem céu", (x, ret.y + 66), self.fonte_peq, (150, 144, 170))
             return
         est = jogo.estacao
@@ -306,7 +331,7 @@ class Interface:
         ret = pygame.Rect(LARGURA_TELA - lado - 14, 120, lado + 6, lado + 6)
         self.ret_minimapa = ret
         tela.blit(self.moldura(ret.w, ret.h, "barra"), ret.topleft)
-        if jogo.subterraneo():
+        if jogo.estruturas.subterraneo:
             dentro = ret.inflate(-6, -6)
             tela.fill((14, 12, 20), dentro)
             self.texto(tela, "Masmorra", (dentro.centerx, dentro.centery - 14), self.fonte_peq, (200, 170, 255),
@@ -342,6 +367,15 @@ class Interface:
             e = inv.equipamento[slot]
             if e:
                 tela.blit(self.icones_peq[e[0]], (r.x + 2, r.y + 2))
+        # [v0.5] barra de XP e nível
+        nivel, frac = jogo.nivel_xp()
+        bx, by, bw = fundo.x + 8, fundo.y - 9, fundo.w - 16
+        pygame.draw.rect(tela, (16, 14, 22), (bx - 2, by - 2, bw + 4, 8))
+        pygame.draw.rect(tela, (40, 60, 30), (bx, by, bw, 4))
+        pygame.draw.rect(tela, COR_XP, (bx, by, int(bw * frac), 4))
+        if nivel > 0:
+            self.texto(tela, str(nivel), (fundo.centerx, by - 18), self.fonte, (170, 255, 110), centro=True,
+                       contorno=True)
         item = inv.item_selecionado()
         if item:
             dica = ITENS[item]["nome"]
@@ -354,7 +388,10 @@ class Interface:
                 dica += "  (botão direito na água)"
             elif item == "arco":
                 dica += f"  (clique para atirar - flechas: {inv.quantidade('flecha')})"
-            self.texto(tela, dica, (LARGURA_TELA // 2, fundo.y - 24), self.fonte_peq, centro=True)
+            e = inv.espacos[inv.selecionado]
+            if e and len(e) > 2:
+                dica += f"  [{e[2]}/{ITENS[item].get('durabilidade', e[2])}]"
+            self.texto(tela, dica, (LARGURA_TELA // 2, fundo.y - 40), self.fonte_peq, centro=True)
 
     def desenhar_barra_quebra(self, tela, x, y, fracao):
         larg, alt = 42, 9
@@ -419,6 +456,13 @@ class Interface:
                 linhas.append((f"{nome} {info[chave]:+d}", VERDE if info[chave] > 0 else VERMELHO, self.fonte_peq))
         if "slot" in info:
             linhas.append((f"Equipa em: {NOMES_SLOTS[info['slot']]}", CINZA_TEXTO, self.fonte_peq))
+        if info.get("durabilidade"):
+            linhas.append((f"Durabilidade: {info['durabilidade']} usos", (200, 200, 150), self.fonte_peq))
+        from blocos import FUNDICAO, COMBUSTIVEL
+        if item in FUNDICAO:
+            linhas.append((f"Forno: vira {ITENS[FUNDICAO[item]]['nome']}", (255, 180, 110), self.fonte_peq))
+        if item in COMBUSTIVEL:
+            linhas.append((f"Combustível: {COMBUSTIVEL[item]:.0f} s de fogo", (255, 180, 110), self.fonte_peq))
         if info.get("pilha", 1) > 1:
             linhas.append((f"Pilha até {info['pilha']}", (140, 136, 160), self.fonte_peq))
         if "desc" in info:
@@ -453,10 +497,29 @@ class Interface:
             self.slots_inventario.append((r, ("inv", i)))
         return by + TAM
 
+    def desenhar_grade_criacao(self, tela, jogo, pos_mouse, gx, gy, lado):
+        """[v0.5] Grade de criação lado x lado + seta + resultado."""
+        grade = jogo.grade3 if lado == 3 else jogo.grade2
+        self.texto(tela, f"Criação {lado}x{lado}", (gx, gy - 22), self.fonte_peq, CINZA_TEXTO)
+        for i in range(lado * lado):
+            r = pygame.Rect(gx + (i % lado) * (TAM + ESP), gy + (i // lado) * (TAM + ESP), TAM, TAM)
+            self.espaco(tela, r, grade[i], r.collidepoint(pos_mouse))
+            self.slots_inventario.append((r, ("grade", i)))
+        meio_y = gy + (lado * (TAM + ESP) - ESP) // 2
+        sx = gx + lado * (TAM + ESP) + 14
+        pygame.draw.polygon(tela, DOURADO, [(sx, meio_y - 8), (sx + 22, meio_y - 8), (sx + 22, meio_y - 16),
+                                            (sx + 38, meio_y), (sx + 22, meio_y + 16), (sx + 22, meio_y + 8),
+                                            (sx, meio_y + 8)])
+        r = pygame.Rect(sx + 50, meio_y - TAM // 2 - 4, TAM + 8, TAM + 8)
+        res = jogo.pegar_ref(("saida", 0))
+        self.espaco(tela, r, res, r.collidepoint(pos_mouse) and res is not None)
+        self.slots_inventario.append((r, ("saida", 0)))
+        return r
+
     def desenhar_inventario(self, tela, jogo, pos_mouse):
         inv = jogo.jogador.inventario
-        ret = pygame.Rect(0, 0, 760, 400)
-        ret.center = (LARGURA_TELA // 2, ALTURA_TELA // 2 - 24)
+        ret = pygame.Rect(0, 0, 760, 520)
+        ret.center = (LARGURA_TELA // 2, ALTURA_TELA // 2 - 22)
         self.ret_painel = ret
         self.painel(tela, ret, 245)
         self.titulo_painel(tela, ret, "INVENTÁRIO")
@@ -484,10 +547,15 @@ class Interface:
             self.espaco(tela, r, inv.equipamento[slot], r.collidepoint(pos_mouse), vazio=self.icones_vazios[slot])
             self.slots_inventario.append((r, ("equip", slot)))
 
-        gx, gy = ret.x + 260, ret.y + 66
-        self._grade(tela, jogo, pos_mouse, gx, gy, inv)
-        self.texto(tela, "Arraste para mover/equipar  -  Botão direito: equipar ou dividir  -  "
-                         "Solte fora para jogar no chão", (ret.centerx, ret.bottom - 26),
+        gx = ret.x + 260
+        self.desenhar_grade_criacao(tela, jogo, pos_mouse, gx + 60, ret.y + 62, 2)
+        nivel, frac = jogo.nivel_xp()
+        self.texto(tela, f"Nível {nivel}  ({int(frac * 100)}%)", (gx + 330, ret.y + 70), self.fonte_peq, COR_XP)
+        self.texto(tela, "Bancada: grade 3x3", (gx + 330, ret.y + 94), self.fonte_peq, CINZA_TEXTO)
+        self.texto(tela, "C: livro de receitas", (gx + 330, ret.y + 116), self.fonte_peq, CINZA_TEXTO)
+        self._grade(tela, jogo, pos_mouse, gx, ret.y + 214, inv)
+        self.texto(tela, "Arraste para mover/equipar/criar  -  Botão direito: equipar ou dividir  -  "
+                         "Shift+clique: move direto", (ret.centerx, ret.bottom - 26),
                    self.fonte_peq, CINZA_TEXTO, centro=True)
         self._dica_slots(tela, jogo, pos_mouse)
 
@@ -519,6 +587,71 @@ class Interface:
                    (ret.centerx, ret.bottom - 26), self.fonte_peq, CINZA_TEXTO, centro=True)
         self._dica_slots(tela, jogo, pos_mouse)
 
+    def desenhar_bancada(self, tela, jogo, pos_mouse):
+        """[v0.5] Bancada: grade 3x3 + mochila."""
+        inv = jogo.jogador.inventario
+        ret = pygame.Rect(0, 0, 560, 540)
+        ret.center = (LARGURA_TELA // 2, ALTURA_TELA // 2 - 16)
+        self.ret_painel = ret
+        self.painel(tela, ret, 245)
+        self.titulo_painel(tela, ret, "BANCADA")
+        self.slots_inventario = []
+        gx = ret.x + (ret.w - (9 * (TAM + ESP) - ESP)) // 2
+        self.desenhar_grade_criacao(tela, jogo, pos_mouse, gx + 80, ret.y + 56, 3)
+        rc = __import__("criacao").casar(jogo.grade3, 3)
+        if rc:
+            self.texto(tela, ITENS[rc["item"]]["nome"], (gx + 330, ret.y + 200), self.fonte_peq, DOURADO)
+        self._grade(tela, jogo, pos_mouse, gx, ret.y + 56 + 3 * (TAM + ESP) + 36, inv)
+        self.texto(tela, "Monte a forma na grade e pegue o resultado  -  Shift: cria o máximo  -  C: receitas",
+                   (ret.centerx, ret.bottom - 26), self.fonte_peq, CINZA_TEXTO, centro=True)
+        self._dica_slots(tela, jogo, pos_mouse)
+
+    def desenhar_forno(self, tela, jogo, pos_mouse):
+        """[v0.5] Forno: entrada + combustível -> saída."""
+        inv = jogo.jogador.inventario
+        forno = jogo.forno_aberto
+        ret = pygame.Rect(0, 0, 560, 520)
+        ret.center = (LARGURA_TELA // 2, ALTURA_TELA // 2 - 20)
+        self.ret_painel = ret
+        self.painel(tela, ret, 245)
+        self.titulo_painel(tela, ret, "FORNO")
+        self.slots_inventario = []
+        cx = ret.x + 170
+        r_ent = pygame.Rect(cx, ret.y + 50, TAM, TAM)
+        r_comb = pygame.Rect(cx, ret.y + 50 + TAM + 44, TAM, TAM)
+        r_said = pygame.Rect(cx + 180, ret.y + 50 + (TAM + 44) // 2 - 4, TAM + 8, TAM + 8)
+        cont = forno.conteudo if forno else [None, None, None]
+        self.texto(tela, "Entrada", (r_ent.x - 80, r_ent.y + 14), self.fonte_peq, CINZA_TEXTO)
+        self.texto(tela, "Combustível", (r_comb.x - 104, r_comb.y + 14), self.fonte_peq, CINZA_TEXTO)
+        self.texto(tela, "Saída", (r_said.right + 12, r_said.y + 18), self.fonte_peq, CINZA_TEXTO)
+        for r, i in ((r_ent, 0), (r_comb, 1), (r_said, 2)):
+            self.espaco(tela, r, cont[i], r.collidepoint(pos_mouse))
+            self.slots_inventario.append((r, ("forno", i)))
+        # fogo (combustível que resta)
+        fx, fy = r_ent.centerx, r_ent.bottom + 22
+        frac_fogo = (forno.queima / forno.queima_max) if forno and forno.queima > 0 else 0.0
+        pygame.draw.rect(tela, (40, 30, 30), (fx - 9, fy - 14, 18, 28))
+        if frac_fogo > 0:
+            h = int(26 * frac_fogo)
+            pygame.draw.rect(tela, (240, 120, 40), (fx - 8, fy + 13 - h, 16, h))
+            pygame.draw.rect(tela, (255, 220, 110), (fx - 4, fy + 13 - h // 2, 8, h // 2))
+        # seta de progresso
+        from blocos import TEMPO_FUNDIR
+        prog = (forno.progresso / TEMPO_FUNDIR) if forno else 0.0
+        ax, ay = r_ent.right + 24, r_said.centery
+        aw = r_said.x - ax - 26
+        pygame.draw.rect(tela, (30, 26, 40), (ax, ay - 7, aw, 14))
+        pygame.draw.rect(tela, DOURADO, (ax, ay - 5, int(aw * prog), 10))
+        pygame.draw.polygon(tela, DOURADO if prog > 0.95 else (90, 84, 110),
+                            [(ax + aw, ay - 13), (ax + aw + 16, ay), (ax + aw, ay + 13)])
+        from criacao import fundivel as criacao_fundivel
+        if forno and cont[0] and not criacao_fundivel(cont[0][0]):
+            self.texto(tela, "Isso não derrete", (ax, ay + 18), self.fonte_peq, VERMELHO)
+        self._grade(tela, jogo, pos_mouse, ret.x + (ret.w - (9 * (TAM + ESP) - ESP)) // 2, ret.y + 250, inv)
+        self.texto(tela, "Minérios, areia, pedregulho, comida crua... + carvão/madeira  -  Shift+clique",
+                   (ret.centerx, ret.bottom - 26), self.fonte_peq, CINZA_TEXTO, centro=True)
+        self._dica_slots(tela, jogo, pos_mouse)
+
     # ===========================================================
     # Criação (C)
     # ===========================================================
@@ -545,30 +678,52 @@ class Interface:
 
         self.ret_receitas = []
         receitas = [(i, rc) for i, rc in enumerate(RECEITAS) if rc["categoria"] == jogo.categoria]
-        y = ret.y + 74
-        for n, (indice, rc) in enumerate(receitas):
-            r = pygame.Rect(ret.x + 16, y + n * 50, ret.w - 32, 46)
+        y0 = ret.y + 74
+        larg = (ret.w - 40) // 2
+        alt = 48
+        por_coluna = 8
+        for n, (indice, rc) in enumerate(receitas[:por_coluna * 2]):
+            col, lin = n // por_coluna, n % por_coluna
+            r = pygame.Rect(ret.x + 16 + col * (larg + 8), y0 + lin * (alt + 2), larg, alt)
             pode, motivo = jogo.pode_criar(rc)
             sel = r.collidepoint(pos_mouse) or jogo.selecao_criacao == indice
             tela.blit(self.moldura(r.w, r.h, "botao_sel" if sel else "espaco", 230), r.topleft)
-            tela.blit(self.icones[rc["item"]], (r.x + 8, r.y + 7))
+            tela.blit(self.icones[rc["item"]], (r.x + 8, r.y + 8))
             cor = COR_TIER.get(_tier(rc["item"]), COR_TEXTO) if pode else (150, 146, 160)
             nome = ITENS[rc["item"]]["nome"] + (f" x{rc.get('qtd', 1)}" if rc.get("qtd", 1) > 1 else "")
-            self.texto(tela, nome, (r.x + 52, r.y + 5), self.fonte, cor)
+            self.texto(tela, nome, (r.x + 48, r.y + 6), self.fonte_peq, cor)
             est = rc.get("estacao")
             if est:
-                perto = jogo.estacao_perto(est)
-                self.texto(tela, f"Precisa: {NOMES_ESTACOES[est]} por perto", (r.x + 52, r.y + 26),
-                           self.fonte_peq, VERDE if perto else VERMELHO)
-            cx = r.right - 12
+                perto = jogo.estacao_perto(est) or (est == "bancada" and jogo.estado == "bancada")
+                self.texto(tela, f"{NOMES_ESTACOES[est]}", (r.x + 48, r.y + 26), self.fonte_peq,
+                           VERDE if perto else VERMELHO)
+            elif "forma" in rc or "sem_forma" in rc:
+                self.texto(tela, "Grade 2x2", (r.x + 48, r.y + 26), self.fonte_peq, (170, 200, 170))
+            # forma da receita (mini grade 3x3) ou custo
+            if "forma" in rc:
+                from blocos import CHAVES
+                cel = 14
+                gx = r.right - 3 * cel - 8
+                gy = r.y + (alt - 3 * cel) // 2
+                for jj in range(3):
+                    for ii in range(3):
+                        pygame.draw.rect(tela, (26, 22, 36), (gx + ii * cel, gy + jj * cel, cel - 1, cel - 1))
+                for jj, linha in enumerate(rc["forma"]):
+                    for ii, letra in enumerate(linha):
+                        if letra != " ":
+                            tela.blit(self.icones_mini[CHAVES[letra]], (gx + ii * cel, gy + jj * cel))
+                cx = gx - 8
+            else:
+                cx = r.right - 10
             for item, qtd in reversed(list(rc["custo"].items())):
                 tem = inv.quantidade(item)
                 txt = f"{tem}/{qtd}"
-                cx -= self.fonte.size(txt)[0]
-                self.texto(tela, txt, (cx, r.y + 14), self.fonte, VERDE if tem >= qtd else VERMELHO)
-                cx -= 36
-                tela.blit(self.icones[item], (cx, r.y + 7))
-                cx -= 14
+                cx -= self.fonte_peq.size(txt)[0]
+                self.texto(tela, txt, (cx, r.y + 26), self.fonte_peq, VERDE if tem >= qtd else VERMELHO)
+                if "forma" not in rc:
+                    cx -= 26
+                    tela.blit(self.icones_peq[item], (cx, r.y + 20))
+                cx -= 8
             self.ret_receitas.append((r, indice))
         self.texto(tela, "Clique numa receita para criar  -  Clique nas abas para mudar de categoria  -  C/Esc fecha",
                    (ret.centerx, ret.bottom - 26), self.fonte_peq, CINZA_TEXTO, centro=True)
@@ -590,7 +745,7 @@ class Interface:
         ret = pygame.Rect(0, 0, 580, 400)
         ret.center = (LARGURA_TELA // 2, ALTURA_TELA // 2 + 40)
         self._titulo_jogo(tela, ret.y - 110, jogo)
-        self.texto(tela, "v0.4 - estações, natação, minimapa e mais", (LARGURA_TELA // 2, ret.y - 40),
+        self.texto(tela, "v0.5 - blocos, cavernas, minérios e criação em grade", (LARGURA_TELA // 2, ret.y - 40),
                    self.fonte, (230, 226, 246), centro=True, contorno=True)
         self.painel(tela, ret, 238)
         self.texto(tela, "Semente do mundo:", (ret.x + 50, ret.y + 24), self.fonte)
@@ -706,9 +861,10 @@ class Interface:
             (k("cima", "WASD") + " ...", "andar (movimento suave); água funda: você NADA (gasta ar e energia)"),
             (k("correr", "Shift"), "correr (gasta energia)"),
             (k("rolar", "Espaço"), "rolar / esquivar (fica invencível um instante)"),
-            ("Esquerdo (segurar)", "quebrar, atacar na direção do mouse, atirar com o arco"),
-            ("Direito", "construir, comer/beber, pescar, plantar, abrir baú, dormir na cama"),
-            (k("interagir", "E"), "beber água, encher cantil, assar, abrir baú, dormir"),
+            ("Esquerdo (segurar)", "minerar blocos, cavar o chão (pá/picareta), atacar, atirar com o arco"),
+            ("Direito", "colocar QUALQUER bloco, comer/beber, pescar, abrir baú/bancada/forno"),
+            (k("interagir", "E"), "descer pelo buraco / subir a escada, beber, abrir bancada/forno/baú"),
+            (k("espiar", "V"), "debaixo da terra: ver a camada de cima (transparente)"),
             (k("comer", "F") + " / " + k("atacar", "J"), "comer / atacar com o teclado"),
             (k("inventario", "I") + " / " + k("criar", "C"), "inventário / criação"),
             (k("minimapa", "M") + " / " + k("mapa", "N"), "tamanho do minimapa / mapa completo"),
@@ -719,11 +875,11 @@ class Interface:
             self.texto(tela, tecla, (ret.x + 30, y), self.fonte, (255, 220, 120))
             self.texto(tela, acao, (ret.x + 250, y), self.fonte_peq)
             y += 30
-        dicas = ["Estações: Primavera, Verão, Outono e Inverno (3 dias cada). No inverno tudo neva, faz frio",
-                 "e as frutas não crescem. Fogueira esquenta, sopa ajuda. Forno: carvão, barras de ferro e pão.",
-                 "Cama marca onde você renasce e à noite pula para a manhã. Baú guarda itens. Tochas iluminam.",
-                 "Lobos caçam animais e você (mais no inverno). À noite: slimes e aranhas. Deserto: escorpiões.",
-                 "Explore: vilas (troque com aldeões), cidadelas, castelos, ruínas e masmorras (E na escada)."]
+        dicas = ["Tora -> 4 tábuas -> gravetos -> bancada (grade 3x3) -> picareta de madeira -> pedra -> ferro -> diamante.",
+                 "Cave o chão com a pá: abre um BURACO; E em cima desce uma camada (até -4). Lá embaixo é escuro: tochas!",
+                 "Minérios: carvão e ferro (-1), ouro (-2), cristal (-3) e diamante (-4, perto da lava). Derreta no forno.",
+                 "Fome: correr, minerar e lutar cansam. Comida cheia cura. Noite: zumbis, esqueletos e o Explosivo.",
+                 "Estações, clima, vilas, castelos e masmorras continuam. Ferramentas gastam (barrinha no ícone)."]
         for n, d in enumerate(dicas):
             self.texto(tela, d, (ret.centerx, ret.bottom - 160 + n * 22), self.fonte_peq, (200, 232, 200), centro=True)
         self.texto(tela, "Pressione qualquer tecla ou clique para continuar",

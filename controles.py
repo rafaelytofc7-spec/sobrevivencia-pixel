@@ -30,6 +30,7 @@ ACOES = [
     ("minimapa", "Minimapa: tamanho", [pygame.K_m]),
     ("mapa", "Mapa completo", [pygame.K_n]),
     ("ajuda", "Ajuda", [pygame.K_h]),
+    ("espiar", "Ver a camada de cima (cavernas)", [pygame.K_v]),
 ]
 NOMES_ACOES = {a: n for a, n, _ in ACOES}
 PADRAO = {a: list(t) for a, _, t in ACOES}

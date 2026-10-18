@@ -994,6 +994,9 @@ def criar_icones():
         ic[f"machado_{tier}"] = icone_machado(cor)
         ic[f"picareta_{tier}"] = icone_picareta(cor)
         ic[f"espada_{tier}"] = icone_espada(cor)
+    import arte_blocos                       # [v0.5] ícones dos blocos, minérios e ferramentas novas
+    for nome, img in arte_blocos.icones_para_criar().items():
+        ic.setdefault(nome, img)
     faltando = [i for i in ITENS if i not in ic]
     assert not faltando, f"Itens sem ícone: {faltando}"
     return ic
@@ -1237,6 +1240,8 @@ class Sprites:
         self.itens_chao = {nome: pygame.transform.scale(img, (10, 10)) for nome, img in self.icones.items()}
         self.itens_chao["madeira"] = item_chao_madeira()
         self.itens_chao["pedra"] = item_chao_pedra()
+        import arte_blocos                   # [v0.5] blocos, cavernas e bichos novos
+        arte_blocos.instalar(self)
 
         self.cursor = pygame.transform.scale(sprite_cursor(), (30, 39))
         self.sombra = nova_superficie(12, 4)
@@ -1300,7 +1305,8 @@ class Sprites:
             return self.fogueira[0]
         if item == "sementes_trigo":
             return self.plantacao[0]
-        return self.objetos[item][0]
+        from dados import ITENS
+        return self.objetos[ITENS[item].get("objeto", item)][0]     # [v0.5] item -> bloco (tábuas -> bloco_tabuas)
 
     def fantasma(self, item, valido):
         k = (item, valido)

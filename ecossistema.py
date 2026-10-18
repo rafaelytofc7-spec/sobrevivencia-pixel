@@ -16,6 +16,7 @@ from config import (TILE, TAMANHO_CHUNK, CHAO_AGUA, LAMA, MAX_PASSIVOS, MAX_PRED
 from dados import BIOMAS, CRIATURAS
 from estacoes import FILHOTES, PASSIVOS, PREDADORES_EXTRA
 from entidades import Criatura
+from mobs import criar_criatura                   # [v0.5] zumbi, esqueleto, explosivo
 from mundo import chunk_do_bloco
 from ruido import numero_chunk
 
@@ -74,7 +75,7 @@ class Ecossistema:
         for _ in range(rng.randint(1, 3)):        # vêm em grupinhos
             lugar = self.lugar_livre(ch, rng)
             if lugar:
-                self.jogo.criaturas.append(Criatura(especie, *lugar))
+                self.jogo.criaturas.append(criar_criatura(especie, *lugar))
 
     # -----------------------------------------------------------
     def atualizar(self, dt):
@@ -117,7 +118,7 @@ class Ecossistema:
                 continue                                  # chunk foi descarregado
             longe = math.hypot(c.x - j.x, c.y - j.y)
             if CRIATURAS[c.tipo].get("noturno"):
-                if c.tipo == "slime" and dia_claro:
+                if (c.tipo == "slime" or CRIATURAS[c.tipo].get("queima_sol")) and dia_claro:
                     c.vida -= dt * 0.8                    # o sol derrete os slimes
                 elif dia_claro and longe > 200:
                     continue                              # aranhas vão embora de dia
@@ -164,4 +165,4 @@ class Ecossistema:
             for f in jogo.mundo.lista_fogueiras():
                 if math.hypot(x - f.centro[0], y - f.centro[1]) < RAIO_LUZ_FOGUEIRA * 1.2:
                     return
-        jogo.criaturas.append(Criatura(especie, x, y))
+        jogo.criaturas.append(criar_criatura(especie, x, y))

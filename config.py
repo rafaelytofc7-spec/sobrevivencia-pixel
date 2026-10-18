@@ -39,6 +39,9 @@ GRAMA_PANTANO = 6
 NEVE = 7
 ROCHA = 8
 CHAO_AGUA = (AGUA_FUNDA, AGUA_RASA)
+# v0.5: chão das cavernas (20 e 21 são da masmorra)
+CAVERNA = 22
+LAVA = 23
 
 # Chão principal de cada bioma
 CHAO_DO_BIOMA = {

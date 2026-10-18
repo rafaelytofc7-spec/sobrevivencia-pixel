@@ -12,19 +12,26 @@ import math
 import pygame
 
 from config import (TILE, TAMANHO_CHUNK, AGUA_FUNDA, AGUA_RASA, LAMA, AREIA, GRAMA,
-                    GRAMA_FLORESTA, GRAMA_PANTANO, NEVE, ROCHA)
+                    GRAMA_FLORESTA, GRAMA_PANTANO, NEVE, ROCHA, CAVERNA, LAVA)
 
 CH = TAMANHO_CHUNK
 CORES_CHAO = {
     AGUA_FUNDA: (40, 84, 168), AGUA_RASA: (78, 142, 208), LAMA: (118, 90, 60), AREIA: (222, 200, 138),
     GRAMA: (96, 168, 72), GRAMA_FLORESTA: (62, 126, 56), GRAMA_PANTANO: (92, 112, 62),
     NEVE: (232, 238, 248), ROCHA: (126, 122, 118),
+    CAVERNA: (112, 104, 98), LAVA: (240, 110, 30),          # [v0.5]
 }
 CORES_INVERNO = {GRAMA: (226, 234, 244), GRAMA_FLORESTA: (214, 224, 238), GRAMA_PANTANO: (200, 212, 220)}
 CORES_OUTONO = {GRAMA: (160, 148, 64), GRAMA_FLORESTA: (150, 96, 42)}
 CORES_OBJETO = {
     "arvore": (34, 92, 40), "arvore_pantano": (60, 82, 40), "pinheiro": (30, 80, 56), "cacto": (60, 140, 60),
     "pedra": (90, 92, 104), "minerio_ferro": (200, 120, 80), "arbusto": (180, 40, 60),
+    # [v0.5] blocos e minérios (nas cavernas a pedra fica escura e o caminho claro)
+    "bloco_pedra": (40, 38, 46), "bloco_pedregulho": (110, 110, 120), "bloco_pedra_lisa": (150, 150, 158),
+    "bloco_terra": (120, 84, 52), "bloco_areia": (214, 196, 140), "bloco_tora": (140, 96, 56),
+    "bloco_tabuas": (184, 140, 86), "bloco_vidro": (190, 226, 240), "lampada": (255, 236, 160),
+    "min_carvao": (20, 20, 24), "min_ferro": (200, 150, 110), "min_ouro": (246, 206, 60),
+    "min_cristal": (230, 40, 70), "min_diamante": (90, 240, 230), "buraco": (0, 0, 0), "escada": (200, 150, 90),
 }
 COR_CONSTRUCAO = (170, 110, 60)
 NEVOA = (14, 12, 22)
@@ -54,7 +61,7 @@ class Minimapa:
         x0, y0 = ch.cx * CH, ch.cy * CH
         for j in range(CH):
             for i in range(CH):
-                s.set_at((i, j), cores[ch.chao[j * CH + i]])
+                s.set_at((i, j), cores.get(ch.chao[j * CH + i], (60, 58, 64)))
         for (tx, ty), o in ch.objetos.items():
             cor = CORES_OBJETO.get(o.tipo)
             if cor is None and o.construcao:

@@ -34,7 +34,13 @@ ROUPAS = {
     None: ((44, 82, 160), (64, 116, 206), (104, 152, 230)),               # camisa azul
     "roupa_couro": ((112, 72, 40), (150, 100, 58), (186, 136, 84)),
     "armadura_ferro": ((122, 128, 146), (170, 176, 192), (222, 226, 238)),
+    "armadura_diamante": ((40, 150, 160), (90, 210, 214), (170, 246, 240)),     # v0.5
 }
+METAIS = ("armadura_ferro", "armadura_diamante")
+
+
+def _metal(cabeca):
+    return "armadura_diamante" if cabeca == "capacete_diamante" else "armadura_ferro"
 
 ANIMACOES = {"parado": 2, "andar": 4, "atacar": 3, "nadar": 2, "rolar": 4}
 
@@ -100,8 +106,8 @@ def _cabeca_frente(pt, cabeca, costas):
         if costas:
             pt.r(3, 0, 10, 9, med)
             pt.r(6, 2, 4, 5, esc)
-    elif cabeca == "capacete_ferro":
-        esc, med, cla = ROUPAS["armadura_ferro"]
+    elif cabeca in ("capacete_ferro", "capacete_diamante"):
+        esc, med, cla = ROUPAS[_metal(cabeca)]
         pt.r(3, 0, 10, 4, med)
         pt.r(3, 4, 10, 1, esc)
         pt.r(4, 0, 3, 1, cla)
@@ -130,8 +136,8 @@ def _cabeca_lado(pt, cabeca):
         pt.r(3, 3, 5, 6, med)
         pt.r(3, 3, 1, 6, esc)
         pt.r(5, 0, 4, 1, cla)
-    elif cabeca == "capacete_ferro":
-        esc, med, cla = ROUPAS["armadura_ferro"]
+    elif cabeca in ("capacete_ferro", "capacete_diamante"):
+        esc, med, cla = ROUPAS[_metal(cabeca)]
         pt.r(3, 0, 10, 4, med)
         pt.r(3, 4, 10, 1, esc)
         pt.r(3, 4, 4, 3, med)
@@ -148,7 +154,7 @@ def _torso_frente(pt, corpo, costas, braco_e=0, braco_d=0, ombro=True):
         pt.r(6, 9, 4, 1, cla)                  # gola
         if corpo == "roupa_couro":
             pt.p(7, 11, esc), pt.p(8, 12, esc)  # costura
-        elif corpo == "armadura_ferro":
+        elif corpo in METAIS:
             pt.r(5, 11, 6, 1, cla)              # placa do peito
             pt.r(5, 12, 6, 1, esc)
     pt.r(4, 14, 8, 1, CINTO)
@@ -158,7 +164,7 @@ def _torso_frente(pt, corpo, costas, braco_e=0, braco_d=0, ombro=True):
     for x, desl in ((3, braco_e), (12, braco_d)):
         pt.r(x, 10, 1, 3 + desl, med if x == 3 else esc)
         pt.r(x, 13 + desl, 1, 2, PELE)
-    if corpo == "armadura_ferro" and ombro:
+    if corpo in METAIS and ombro:
         pt.r(2, 9, 3, 2, cla)
         pt.r(11, 9, 3, 2, med)
 
@@ -177,7 +183,7 @@ def _torso_lado(pt, corpo, braco=0):
     pt.r(5, 9, 6, 5, med)
     pt.r(5, 9, 1, 5, esc)
     pt.r(10, 9, 1, 5, cla)
-    if corpo == "armadura_ferro":
+    if corpo in METAIS:
         pt.r(6, 11, 5, 1, cla)
         pt.r(5, 9, 4, 2, cla)
     pt.r(5, 14, 6, 1, CINTO)
@@ -339,7 +345,7 @@ def _rolar(quadro, cabeca, corpo):
                 pt.p(x, y, esc)
     pt.r(5, 7, 6, 5, PELE)
     pt.r(5, 6, 6, 2, CABELO if cabeca is None else ROUPAS["roupa_couro" if cabeca == "capuz_couro"
-                                                          else "armadura_ferro"][1])
+                                                          else _metal(cabeca)][1])
     pt.r(12, 15, 2, 3, BOTA)
     pt.r(4, 16, 3, 2, PELE)
     _contornar(base)
