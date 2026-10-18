@@ -802,16 +802,16 @@ class Interface:
         self.ret_controles = []
         y = ret.y + 30
         for acao, nome, _ in ACOES:
-            r = pygame.Rect(ret.x + 24, y, ret.w - 48, 27)
+            r = pygame.Rect(ret.x + 24, y, ret.w - 48, 25)
             esperando = jogo.esperando_tecla == acao
             if esperando or r.collidepoint(pos_mouse):
                 tela.blit(self.moldura(r.w, r.h, "botao_sel" if esperando else "botao", 230), r.topleft)
-            self.texto(tela, nome, (r.x + 12, r.y + 6), self.fonte_peq)
+            self.texto(tela, nome, (r.x + 12, r.y + 5), self.fonte_peq)
             txt = "Aperte uma tecla... (Esc cancela)" if esperando else jogo.controles.texto(acao)
-            self.texto(tela, txt, (r.right - 12, r.y + 6), self.fonte_peq,
+            self.texto(tela, txt, (r.right - 12, r.y + 5), self.fonte_peq,
                        (255, 230, 130) if esperando else (180, 220, 255), direita=True)
             self.ret_controles.append((r, acao))
-            y += 29
+            y += 27
         self.texto(tela, "Clique numa ação e aperte a nova tecla.  Barra rápida: 1-9 / roda do mouse.",
                    (ret.centerx, y + 6), self.fonte_peq, CINZA_TEXTO, centro=True)
         gp = jogo.controles.joystick
