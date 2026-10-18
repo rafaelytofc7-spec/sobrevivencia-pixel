@@ -13,6 +13,7 @@ import os
 import pygame
 
 from config import ARQUIVO_CONTROLES
+import armazenamento
 
 # (ação, nome na tela, teclas padrão)
 ACOES = [
@@ -54,12 +55,15 @@ class Controles:
     def __init__(self, arquivo=ARQUIVO_CONTROLES):
         self.arquivo = arquivo
         self.teclas = {a: list(t) for a, t in PADRAO.items()}
+        self.vetor_toque = (0.0, 0.0)    # joystick da tela (celular)
+        self.correr_toque = False
         self.carregar()
         self.joystick = None
         self.procurar_gamepad()
 
     # ---------------- arquivo ----------------
     def carregar(self):
+        armazenamento.restaurar("controles", self.arquivo)
         try:
             with open(self.arquivo, "r", encoding="utf-8") as f:
                 d = json.load(f)
@@ -73,6 +77,7 @@ class Controles:
         try:
             with open(self.arquivo, "w", encoding="utf-8") as f:
                 json.dump(self.teclas, f)
+            armazenamento.espelhar("controles", self.arquivo)
         except OSError:
             pass
 
@@ -131,6 +136,8 @@ class Controles:
         """Vetor de movimento (-1..1) do teclado + analógico."""
         dx = (1 if self.apertado(teclas, "direita") else 0) - (1 if self.apertado(teclas, "esquerda") else 0)
         dy = (1 if self.apertado(teclas, "baixo") else 0) - (1 if self.apertado(teclas, "cima") else 0)
+        dx += self.vetor_toque[0]
+        dy += self.vetor_toque[1]
         if self.joystick is not None:
             dx += self._eixo(0)
             dy += self._eixo(1)
@@ -148,7 +155,7 @@ class Controles:
         return x, y
 
     def correndo(self, teclas):
-        if self.apertado(teclas, "correr"):
+        if self.apertado(teclas, "correr") or self.correr_toque:
             return True
         j = self.joystick
         if j is not None:

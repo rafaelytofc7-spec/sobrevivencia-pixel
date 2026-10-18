@@ -116,3 +116,47 @@ def fractal3(x, y, z, semente, oitavas=2):
         amp *= 0.5
         freq *= 2.0
     return total / soma
+
+
+# ---------------------------------------------------------------
+# Ruído em grade (versão web): calcula o MESMO fractal() para uma grade
+# inteira de blocos de uma vez, reaproveitando os cantos (hash) entre
+# blocos vizinhos. Dá exatamente os mesmos números que fractal(x/div, y/div),
+# só que bem mais rápido (importante no navegador do celular).
+# ---------------------------------------------------------------
+def fractal_grade(xs, ys, div, semente, oitavas=3):
+    """Lista de linhas: resultado[j][i] == fractal(xs[i] / div, ys[j] / div, semente, oitavas)."""
+    floor = math.floor
+    h = _hash
+    total = [[0.0] * len(xs) for _ in ys]
+    amp = 1.0
+    freq = 1.0
+    soma = 0.0
+    for o in range(oitavas):
+        s = semente + o * 31
+        dx = o * 17.3
+        dy = o * 9.1
+        colunas = []
+        for x in xs:
+            px = (x / div) * freq + dx
+            ix = floor(px)
+            fx = px - ix
+            colunas.append((ix, fx * fx * (3 - 2 * fx)))
+        cantos = {}
+        for j, y in enumerate(ys):
+            py = (y / div) * freq - dy
+            iy = floor(py)
+            fy = py - iy
+            fy = fy * fy * (3 - 2 * fy)
+            linha = total[j]
+            for i, (ix, fx) in enumerate(colunas):
+                c4 = cantos.get((ix, iy))
+                if c4 is None:
+                    c4 = cantos[(ix, iy)] = (h(ix, iy, s), h(ix + 1, iy, s), h(ix, iy + 1, s), h(ix + 1, iy + 1, s))
+                a, b, c, d = c4
+                cima = a + (b - a) * fx
+                linha[i] += (cima + ((c + (d - c) * fx) - cima) * fy) * amp
+        soma += amp
+        amp *= 0.5
+        freq *= 2.0
+    return [[t / soma for t in linha] for linha in total]

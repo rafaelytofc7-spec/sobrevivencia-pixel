@@ -10,6 +10,7 @@ import json
 import os
 
 from config import ARQUIVO_SAVE
+import armazenamento
 
 VERSAO_SAVE = 5   # v0.5: blocos, camadas (cavernas), forno com espaços, durabilidade
 VERSOES_ACEITAS = (5,)
@@ -33,10 +34,12 @@ def salvar_jogo(jogo, caminho=ARQUIVO_SAVE):
     with open(temporario, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, separators=(",", ":"))
     os.replace(temporario, caminho)
+    armazenamento.espelhar("save", caminho)      # versão web: guarda no navegador
 
 
 def carregar_jogo(caminho=ARQUIVO_SAVE):
     """Retorna (dados, erro). dados = None se não der para carregar."""
+    armazenamento.restaurar("save", caminho)
     if not os.path.exists(caminho):
         return None, "Nenhum jogo salvo encontrado"
     try:
@@ -51,4 +54,4 @@ def carregar_jogo(caminho=ARQUIVO_SAVE):
 
 
 def existe_save(caminho=ARQUIVO_SAVE):
-    return os.path.exists(caminho)
+    return os.path.exists(caminho) or (armazenamento.WEB and armazenamento.existe("save"))

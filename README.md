@@ -12,6 +12,26 @@ python main.py
 
 No VS Code: abra a pasta e aperte **F5** (configuração "Jogar (main.py)").
 
+## Jogar no celular (navegador)
+
+Abra **https://rafaelytofc7-spec.github.io/sobrevivencia-pixel/** no Chrome do celular,
+deite o celular e toque em **Tela cheia**. Para virar "app": menu do Chrome → **Adicionar à tela inicial**.
+O jogo salva sozinho no navegador (a cada 30 s e ao abrir o Menu).
+
+| Toque | Ação |
+|---|---|
+| arrastar no lado esquerdo | andar (joystick) |
+| **Minerar** (segurar) | minera / ataca / cava o que está na frente |
+| **Colocar** | coloca o bloco da mão na frente, ou abre baú/bancada/forno |
+| **E** | descer pelo buraco / subir a escada / beber / usar |
+| **Correr** / **Rolar** / **Comer** | igual ao Shift / Espaço / F |
+| tocar num bloco da tela | segurar = minerar ali; com bloco na mão = colocar ali |
+| barra de itens | toque no espaço para escolher |
+| Menu / Mochila / Receitas / Mapa | botões de cima; **X** fecha a janela |
+| Dividir/equipar (na mochila) | liga o "botão direito" para o próximo toque |
+
+Gerar e publicar a versão web (no box): `ferramentas/build_web.sh --publicar` (usa pygbag).
+
 ## Novo jogo e semente
 
 Na tela inicial digite uma **semente** (número ou palavra) ou clique em

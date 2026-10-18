@@ -1,0 +1,28 @@
+    <!-- [Sobrevivência Pixel] aviso de girar o celular + botão de tela cheia -->
+    <div id="sp_gire">
+        <div class="sp_cel">📱</div>
+        <p>Gire o celular para jogar deitado</p>
+        <p style="font-size:16px;font-weight:normal">(a tela fica melhor na horizontal)</p>
+        <button onclick="sp_tela_cheia()" style="font:bold 18px arial;padding:10px 18px;border-radius:10px;margin-top:10px">Tela cheia</button>
+    </div>
+    <button id="sp_tela_cheia" onclick="sp_tela_cheia()">⛶ Tela cheia</button>
+    <script>
+    function sp_tela_cheia() {
+        const el = document.documentElement;
+        const pedir = el.requestFullscreen || el.webkitRequestFullscreen;
+        const sair = document.exitFullscreen || document.webkitExitFullscreen;
+        if (document.fullscreenElement || document.webkitFullscreenElement) { if (sair) sair.call(document); return; }
+        if (!pedir) return;
+        Promise.resolve(pedir.call(el, { navigationUI: "hide" })).then(() => {
+            if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {});
+            setTimeout(() => { if (window.window_resize) window.window_resize(); }, 300);
+        }).catch(() => {});
+    }
+    document.addEventListener("fullscreenchange", () => {
+        const b = document.getElementById("sp_tela_cheia");
+        if (b) b.textContent = document.fullscreenElement ? "✕ Sair da tela cheia" : "⛶ Tela cheia";
+        setTimeout(() => { if (window.window_resize) window.window_resize(); }, 300);
+    });
+    window.addEventListener("orientationchange", () => setTimeout(() => { if (window.window_resize) window.window_resize(); }, 400));
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+    </script>

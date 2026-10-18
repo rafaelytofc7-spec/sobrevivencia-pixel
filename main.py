@@ -7,6 +7,7 @@ clima e estações, ecossistema, jogador (correr, rolar, nadar), inventário,
 baús, criação, construção, pesca, arco, cama, minimapa, controles
 configuráveis, desenho (com cache das imagens dos chunks) e o loop principal.
 """
+import asyncio
 import math
 import random
 import sys
@@ -455,7 +456,10 @@ class Jogo:
                 self.volta_controles = "menu_inicial"
                 self.estado = "controles"
             elif botoes.get("sair") and botoes["sair"].collidepoint(pos):
-                self.rodando = False
+                if WEB:
+                    self.avisar("No navegador é só fechar a aba (o jogo salva sozinho)", 3)
+                else:
+                    self.rodando = False
         elif self.estado == "controles":
             acao = self.interface.no_ponto(self.interface.ret_controles, pos)
             if acao:
@@ -2155,7 +2159,19 @@ class Jogo:
 # ===============================================================
 # Loop principal
 # ===============================================================
-def main():
+DEPURAR_WEB = False
+SALVAR_AUTOMATICO = 30.0    # versão web: salva sozinho (o navegador pode fechar a qualquer hora)
+
+
+def salvar_quieto(jogo):
+    try:
+        salvar_jogo(jogo)
+        jogo.tem_save = True
+    except Exception as erro:          # noqa: BLE001
+        print("salvar automático falhou:", erro)
+
+
+async def main():
     pygame.init()
     pygame.display.set_caption(TITULO)
     try:
@@ -2165,21 +2181,56 @@ def main():
         pass
     tela = pygame.display.set_mode((LARGURA_TELA, ALTURA_TELA))
     pygame.mouse.set_visible(False)
+    if WEB:                            # mostra algo enquanto o mundo é gerado
+        tela.fill((24, 22, 34))
+        f = pygame.font.Font(None, 48)
+        img = f.render("Carregando o mundo...", True, (245, 240, 225))
+        tela.blit(img, img.get_rect(center=(LARGURA_TELA // 2, ALTURA_TELA // 2)))
+        pygame.display.flip()
+        await asyncio.sleep(0)
     relogio = pygame.time.Clock()
     jogo = Jogo(tela)
+    from toque import Toque
+    toque = Toque(jogo)
+    jogo.toque = toque
+    proximo_save = SALVAR_AUTOMATICO
+    estado_antes = jogo.estado
+    quadros, relogio_fps = 0, 0.0
+    estado_dbg = jogo.estado
     while jogo.rodando:
         dt = min(relogio.tick(FPS) / 1000.0, 0.05)
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 jogo.rodando = False
-            else:
+            elif not toque.tratar(ev):
+                if DEPURAR_WEB:
+                    print("[ev]", pygame.event.event_name(ev.type), ev.dict)
                 jogo.tratar_evento(ev)
-        jogo.atualizar(dt, pygame.key.get_pressed())
+            if DEPURAR_WEB and jogo.estado != estado_dbg:
+                print("[estado]", estado_dbg, "->", jogo.estado, pygame.event.event_name(ev.type), ev.dict)
+                estado_dbg = jogo.estado
+        jogo.atualizar(dt, pygame.key.get_pressed(), toque.entrada())
         jogo.desenhar()
+        toque.desenhar(tela)
         pygame.display.flip()
+        if WEB:
+            quadros += 1
+            relogio_fps += dt
+            if relogio_fps >= 10.0:                  # aparece no console do navegador (diagnóstico)
+                print(f"[fps] {quadros / relogio_fps:.1f} estado={jogo.estado} chunks={len(jogo.mundo.chunks)}")
+                quadros, relogio_fps = 0, 0.0
+            if jogo.estado == "jogando":
+                proximo_save -= dt
+            if proximo_save <= 0 or (jogo.estado == "pausa" and estado_antes != "pausa"):
+                proximo_save = SALVAR_AUTOMATICO
+                if jogo.estado != "menu_inicial":
+                    salvar_quieto(jogo)
+            estado_antes = jogo.estado
+        await asyncio.sleep(0)
     pygame.quit()
-    sys.exit()
+    if not WEB:
+        sys.exit()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

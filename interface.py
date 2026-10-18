@@ -418,7 +418,8 @@ class Interface:
             tela.blit(self.icones[arrastando[0]], (pos[0] - 16, pos[1] - 16))
             if arrastando[1] > 1:
                 self.texto(tela, str(arrastando[1]), (pos[0] + 16, pos[1] + 2), self.fonte_peq, direita=True)
-        tela.blit(self.cursor, pos)
+        if not getattr(self, "sem_cursor", False):     # celular: sem setinha
+            tela.blit(self.cursor, pos)
 
     def dica_item(self, tela, item, pos, inv=None):
         """Caixa com nome, tipo e números do item embaixo do mouse."""

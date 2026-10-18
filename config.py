@@ -13,9 +13,29 @@ TILE = 16                 # cada bloco tem 16x16 pixels
 ESCALA = 3                # cada pixel vira 3x3 na tela
 LARGURA_INTERNA = 320
 ALTURA_INTERNA = 200
-LARGURA_TELA = LARGURA_INTERNA * ESCALA   # 960
+WEB = sys.platform == "emscripten"      # rodando no navegador (pygbag)
+
+
+def _largura_celular():
+    """Versão web: tela mais larga nos celulares compridos (20:9), sem faixas pretas dos lados."""
+    try:
+        if os.environ.get("SP_LARGURA"):          # teste no PC
+            return int(os.environ["SP_LARGURA"])
+        if not WEB:
+            return LARGURA_INTERNA
+        import platform as _pf
+        w, h = float(_pf.window.innerWidth), float(_pf.window.innerHeight)
+        if w < h:
+            w, h = h, w                           # em pé: conta como se já estivesse deitado
+        return max(320, min(448, int(round(ALTURA_INTERNA * w / h / 8.0)) * 8))
+    except Exception:                             # noqa: BLE001
+        return LARGURA_INTERNA
+
+
+LARGURA_INTERNA = _largura_celular()
+LARGURA_TELA = LARGURA_INTERNA * ESCALA   # 960 no PC
 ALTURA_TELA = ALTURA_INTERNA * ESCALA     # 600
-FPS = 60
+FPS = 30 if WEB else 60
 from versao import VERSAO
 VERSAO_CURTA = VERSAO[:-2] if VERSAO.count(".") == 2 and VERSAO.endswith(".0") else VERSAO   # 0.4.0 -> 0.4
 TITULO = "Sobrevivência Pixel - v" + VERSAO_CURTA
@@ -26,7 +46,7 @@ TITULO = "Sobrevivência Pixel - v" + VERSAO_CURTA
 TAMANHO_CHUNK = 16        # cada chunk tem 16x16 blocos
 RAIO_CARREGAR = 2         # chunks carregados em volta do jogador (5x5)
 RAIO_DESCARREGAR = 4      # chunks mais longe que isso são guardados e tirados da memória
-CHUNKS_POR_QUADRO = 2     # quantos chunks novos gerar por quadro (evita travadas)
+CHUNKS_POR_QUADRO = 1 if WEB else 2     # quantos chunks novos gerar por quadro (evita travadas)
 
 # Tipos de chão
 AGUA_FUNDA = 0

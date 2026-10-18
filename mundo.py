@@ -19,7 +19,7 @@ from config import (TILE, TAMANHO_CHUNK, RAIO_CARREGAR, RAIO_DESCARREGAR,
                     RAIO_LUZ_FOGUEIRA, RAIO_LUZ_TOCHA, LAVA)
 from dados import OBJETOS, BIOMAS
 import blocos                                   # noqa: F401  [v0.5] blocos, minérios, receitas
-from ruido import fractal, ruido, numero_chunk
+from ruido import fractal, ruido, numero_chunk, fractal_grade
 from estruturas import PlanoEstruturas          # [ESTRUTURAS]
 from dados_estruturas import e_piso             # [ESTRUTURAS]
 
@@ -208,6 +208,43 @@ class Gerador:
                 h = min(h, nivel_base + 0.012)         # margem: alaga na chuva
         return bioma, h, nivel_base
 
+    def dados_chunk(self, x0, y0):
+        """Igual a dados_bloco() para os CH x CH blocos de um chunk (linha a linha),
+        mas calculando o ruído em grade: dá o mesmo mundo, bem mais rápido."""
+        s = self.semente
+        xs, ys = range(x0, x0 + CH), range(y0, y0 + CH)
+        E = fractal_grade(xs, ys, 110.0, s + 11)
+        T = fractal_grade(xs, ys, 160.0, s + 23)
+        M = fractal_grade(xs, ys, 130.0, s + 37)
+        H = fractal_grade(xs, ys, 26.0, s + 51)
+        R = fractal_grade(xs, ys, 85.0, s + 67)
+        saida = []
+        for j in range(CH):
+            for i in range(CH):
+                e, t, m = E[j][i], T[j][i], M[j][i]
+                if e > 0.67:
+                    bioma = "montanha"
+                elif t < 0.34:
+                    bioma = "neve"
+                elif t > 0.62 and m < 0.52:
+                    bioma = "deserto"
+                elif m > 0.63:
+                    bioma = "pantano"
+                elif m > 0.50:
+                    bioma = "floresta"
+                else:
+                    bioma = "planicie"
+                nivel_base = NIVEL_AGUA_BASE + BIOMAS[bioma]["agua"]
+                h = H[j][i]
+                dr = abs(R[j][i] - 0.5)
+                if bioma != "montanha":
+                    if dr < 0.010:
+                        h = min(h, nivel_base - 0.025)
+                    elif dr < 0.020:
+                        h = min(h, nivel_base + 0.012)
+                saida.append((bioma, h, nivel_base))
+        return saida
+
     @staticmethod
     def classificar(bioma, h, nivel_base, deslocamento):
         """Decide o tipo de chão a partir da altura e do nível da água atual."""
@@ -225,14 +262,13 @@ class Gerador:
     def gerar_chunk(self, cx, cy):
         ch = Chunk(cx, cy)
         x0, y0 = cx * CH, cy * CH
-        for j in range(CH):
-            for i in range(CH):
-                b, h, nb = self.dados_bloco(x0 + i, y0 + j)
-                k = j * CH + i
-                ch.biomas[k] = b
-                ch.alturas[k] = h
-                ch.niveis[k] = nb
+        dados = self.dados_chunk(x0, y0)
+        for k, (b, h, nb) in enumerate(dados):
+            ch.biomas[k] = b
+            ch.alturas[k] = h
+            ch.niveis[k] = nb
         ch.recalcular_chao(0.0)
+        manchas = fractal_grade(range(x0, x0 + CH), range(y0, y0 + CH), 7.0, self.semente + 91, 1)
         # objetos (sorteio fixo por chunk)
         rng = random.Random(numero_chunk(self.semente, cx, cy))
         s = self.semente
@@ -246,7 +282,7 @@ class Gerador:
                     continue
                 x, y = x0 + i, y0 + j
                 # manchas: em alguns lugares tem mais coisas (florestas fechadas)
-                mancha = 0.35 + 1.3 * ruido(x / 7.0, y / 7.0, s + 91)
+                mancha = 0.35 + 1.3 * manchas[j][i]
                 acumulado = 0.0
                 for tipo, chance in BIOMAS[ch.biomas[k]]["recursos"]:
                     acumulado += chance * mancha
